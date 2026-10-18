@@ -7,7 +7,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: path.resolve(root, 'game-gpu'),
   base: './',
-  publicDir: path.resolve(root, 'public'),
+  publicDir: path.resolve(root, 'island/public'),
   build: {
     outDir: path.resolve(root, 'dist/game-gpu'),
     emptyOutDir: true,

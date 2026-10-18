@@ -2,7 +2,7 @@
 
 A first-person island explorer: collect every ruby, bounce on trampolines, and wander a forest of procedural trees on two islands joined by a vine bridge.
 
-**Play it live:** https://brerdem.github.io/game/
+**Play it live:** https://brerdem.github.io/game/island/
 
 **WebGPU build:** https://brerdem.github.io/game/game-gpu/ (falls back to WebGL2 when WebGPU is unavailable)
 
@@ -25,7 +25,7 @@ The HUD shows gems collected (`n / total`), score, and a timer that starts on th
 
 - `npm run dev` – local WebGL dev server
 - `npm run dev:gpu` – local WebGPU dev server
-- `npm run build` – Vite build of both the WebGL site (`dist/`) and the WebGPU sub-app (`dist/game-gpu/`)
+- `npm run build` – Vite build of the island game (`dist/island/`), the WebGPU build (`dist/game-gpu/`), then the catalog and puzzle pages copied into `dist/`
 - `node scripts/check.mjs 'http://127.0.0.1:4173/?debug' screenshot.png` – headless WebGL check + screenshot
 - `node scripts/check-gpu.mjs` – headless WebGPU (or WebGL2 fallback) check
 - `node scripts/physics.mjs` – ramp / jump / shoreline physics test

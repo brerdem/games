@@ -15,14 +15,14 @@ Third-party libraries and assets used by Island FPS. Licenses are included for p
 
 Downloaded from [ambientCG](https://ambientcg.com) (CC0 1.0 Universal), compressed to 1K WebP:
 
-- `public/textures/grass/` — Grass001
-- `public/textures/dirt/` — Ground033
-- `public/textures/rock/` — Rock020
-- `public/textures/sand/` — Ground061 “Lightly Wet Sand”
+- `island/public/textures/grass/` — Grass001
+- `island/public/textures/dirt/` — Ground033
+- `island/public/textures/rock/` — Rock020
+- `island/public/textures/sand/` — Ground061 “Lightly Wet Sand”
 
 Water normal map:
 
-- `public/textures/waternormals.jpg` — three.js examples (`examples/textures/waternormals.jpg`), MIT
+- `island/public/textures/waternormals.jpg` — three.js examples (`examples/textures/waternormals.jpg`), MIT
 
 ## Birds
 
@@ -30,7 +30,7 @@ Low-poly seagulls are built in `src/birds.js` from basic Three.js geometry (whit
 
 ## Fonts
 
-- **Luckiest Guy** — SIL Open Font License 1.1 — designed by Astigmatic, via [Google Fonts](https://fonts.google.com/specimen/Luckiest+Guy) / [Fontsource](https://fontsource.org/fonts/luckiest-guy). Self-hosted as `public/fonts/luckiest-guy.woff2`.
+- **Luckiest Guy** — SIL Open Font License 1.1 — designed by Astigmatic, via [Google Fonts](https://fonts.google.com/specimen/Luckiest+Guy) / [Fontsource](https://fontsource.org/fonts/luckiest-guy). Self-hosted as `island/public/fonts/luckiest-guy.woff2`.
 
 ## Previously used (no longer shipped)
 
