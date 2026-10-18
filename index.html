@@ -76,6 +76,22 @@
   }
   #start:hover { background: #259154; }
   #exit:hover { background: rgba(255,255,255,0.1); }
+  .more-games {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 14px;
+    margin-top: 8px;
+    max-width: 560px;
+  }
+  .more-games a {
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255,255,255,0.45);
+  }
   #thanks {
     display: none; text-align: center; color: #fff;
     background: rgba(0,0,0,0.72); padding: 48px 56px; border-radius: 22px;
@@ -137,6 +153,12 @@
       <div class="actions">
         <button type="button" id="start">PLAY</button>
         <button type="button" id="exit">EXIT GAME</button>
+        <nav class="more-games" aria-label="More games">
+          <a href="unravel/">Unravel</a>
+          <a href="pinball-pit/">Pinball Pit</a>
+          <a href="gridlock/">Gridlock</a>
+          <a href="ring-out/">Ring Out</a>
+        </nav>
       </div>
     </div>
   </div>
