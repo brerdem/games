@@ -1,0 +1,18 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ring-out:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Ring Out logic and browser gate
+        run: node --test --test-timeout=180000 ring-out/tests/logic.test.mjs ring-out/tests/browser.test.mjs

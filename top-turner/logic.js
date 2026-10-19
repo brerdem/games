@@ -1,6 +1,7 @@
-export const SLICES = 32;
+(function (root) {
+const SLICES = 32;
 
-export function makeRng(seed) {
+function makeRng(seed) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -10,11 +11,11 @@ export function makeRng(seed) {
   };
 }
 
-export function blank() {
+function blank() {
   return Array.from({ length: SLICES }, () => 1);
 }
 
-export function cutProfile(radii, index, cut, dt) {
+function cutProfile(radii, index, cut, dt) {
   const k = Math.max(0, Math.min(SLICES - 1, index));
   const c = Math.max(0.08, Math.min(1, cut));
   if (c >= radii[k]) return false;
@@ -28,7 +29,7 @@ export function cutProfile(radii, index, cut, dt) {
   return true;
 }
 
-export function statsOf(radii) {
+function statsOf(radii) {
   const n = radii.length;
   let vSum = 0;
   let iSum = 0;
@@ -76,7 +77,7 @@ function archetype(bars) {
   return pairs[0][0];
 }
 
-export function shaped(tip, body, shoulder = 0.62) {
+function shaped(tip, body, shoulder = 0.62) {
   return Array.from({ length: SLICES }, (_, i) => {
     const t = i / (SLICES - 1);
     if (t < shoulder) return body;
@@ -85,7 +86,7 @@ export function shaped(tip, body, shoulder = 0.62) {
   });
 }
 
-export function designTop(radii, name, color, x, y) {
+function designTop(radii, name, color, x, y) {
   const stats = statsOf(radii);
   return {
     name,
@@ -108,9 +109,9 @@ export function designTop(radii, name, color, x, y) {
   };
 }
 
-export const ARENA = 230;
+const ARENA = 230;
 
-export function launchTop(top, vx, vy, omega) {
+function launchTop(top, vx, vy, omega) {
   top.vx = vx;
   top.vy = vy;
   top.w = omega;
@@ -136,7 +137,7 @@ function separateRim(top) {
   }
 }
 
-export function stepTop(top, dt, rng) {
+function stepTop(top, dt, rng) {
   if (top.out) return;
   top.vx += -0.9 * top.x * dt;
   top.vy += -0.9 * top.y * dt;
@@ -159,7 +160,7 @@ export function stepTop(top, dt, rng) {
   if (!top.out && top.w < 0.12) top.out = 'spin';
 }
 
-export function collide(a, b) {
+function collide(a, b) {
   if (a.out || b.out) return 0;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -189,15 +190,18 @@ export function collide(a, b) {
   return impulse;
 }
 
-export function cone(tip, body = 0.85) {
+function cone(tip, body = 0.85) {
   return Array.from({ length: SLICES }, (_, i) => {
     const t = i / (SLICES - 1);
     return Math.max(0.08, body * (1 - t) + tip * t);
   });
 }
 
-export const OPPONENTS = [
+const OPPONENTS = [
   { name: 'Pine Pawn', color: '#e2b15c', radii: shaped(0.5, 0.72, 0.55), pull: 80 },
   { name: 'Flat Jack', color: '#ff6f59', radii: shaped(0.78, 0.96, 0.72), pull: 120 },
   { name: 'Needle', color: '#8fd0ff', radii: shaped(0.14, 0.84, 0.6), pull: 100 },
 ];
+
+  root.TopLogic = { SLICES, makeRng, blank, cutProfile, statsOf, shaped, designTop, ARENA, launchTop, stepTop, collide, cone, OPPONENTS };
+})(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -1,4 +1,4 @@
-import {
+const {
   ARENA,
   OPPONENTS,
   blank,
@@ -9,9 +9,9 @@ import {
   makeRng,
   statsOf,
   stepTop,
-} from './logic.js';
+} = globalThis.TopLogic;
 
-const FONT = '"Fredoka", "Trebuchet MS", "Segoe UI", sans-serif';
+const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 const stage = document.getElementById('stage');
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -20,6 +20,7 @@ const helpEl = document.getElementById('help');
 const overEl = document.getElementById('over');
 const winEl = document.getElementById('win');
 
+let ignoreUntil = 0;
 let W = 800;
 let H = 900;
 let started = false;
@@ -148,6 +149,8 @@ function finishBattle(won, reason) {
     document.getElementById('nextBtn').classList.toggle('hidden', last);
     document.getElementById('againBtn').classList.toggle('hidden', !last);
     winEl.classList.remove('hidden');
+    const focusBtn = last ? document.getElementById('againBtn') : document.getElementById('nextBtn');
+    focusBtn.focus({ preventScroll: true });
     blip(523, 0.1, 'sine', 0.05);
     blip(784, 0.14, 'sine', 0.05);
   } else {
@@ -449,8 +452,12 @@ function pointerPos(e) {
   };
 }
 
+function armOverlayLock() {
+  ignoreUntil = performance.now() + 320;
+}
+
 function onDown(e) {
-  if (!started || overlaysOpen()) return;
+  if (!started || overlaysOpen() || performance.now() < ignoreUntil) return;
   audio();
   const p = pointerPos(e);
   if (mode === 'carve') {
@@ -539,45 +546,58 @@ function frame(now) {
 document.getElementById('helpBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   helpEl.classList.remove('hidden');
-  document.getElementById('helpClose').focus();
+  const sheet = helpEl.querySelector('.sheet');
+  if (sheet) sheet.scrollTop = 0;
+  document.getElementById('helpClose').focus({ preventScroll: true });
+  if (sheet) sheet.scrollTop = 0;
 });
 document.getElementById('helpClose').addEventListener('click', (e) => {
   e.stopPropagation();
   helpEl.classList.add('hidden');
+  armOverlayLock();
 });
 helpEl.addEventListener('click', (e) => {
-  if (e.target === helpEl) helpEl.classList.add('hidden');
+  if (e.target === helpEl) {
+    helpEl.classList.add('hidden');
+    armOverlayLock();
+  }
 });
 document.getElementById('startBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   started = true;
   startEl.classList.add('hidden');
   startRun();
+  armOverlayLock();
 });
 document.getElementById('retryLevelBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   overEl.classList.add('hidden');
   beginFight(fight, false, levelStartScore);
+  armOverlayLock();
 });
 document.getElementById('retryBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   overEl.classList.add('hidden');
   startRun();
+  armOverlayLock();
 });
 document.getElementById('nextBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   winEl.classList.add('hidden');
   beginFight(fight + 1, true, score);
+  armOverlayLock();
 });
 document.getElementById('replayBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   winEl.classList.add('hidden');
   beginFight(fight, true, levelStartScore);
+  armOverlayLock();
 });
 document.getElementById('againBtn').addEventListener('click', (e) => {
   e.currentTarget.blur();
   winEl.classList.add('hidden');
   startRun();
+  armOverlayLock();
 });
 canvas.addEventListener('pointerdown', onDown);
 canvas.addEventListener('pointermove', onMove);

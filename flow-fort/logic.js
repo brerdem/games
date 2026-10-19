@@ -1,11 +1,12 @@
-export const COLORS = {
+(function (root) {
+const COLORS = {
   R: '#ff5d6c',
   B: '#4da3ff',
   Y: '#ffd23f',
   G: '#3ddc97',
 };
 
-export function picture(lines, ox, oy) {
+function picture(lines, ox, oy) {
   const cells = [];
   lines.forEach((line, r) => {
     [...line].forEach((ch, c) => {
@@ -20,7 +21,7 @@ function gun(color, ammo) {
   return { color, ammo };
 }
 
-export const LEVELS = [
+const LEVELS = [
   {
     id: 1,
     cols: 8,
@@ -50,7 +51,7 @@ export const LEVELS = [
   },
 ];
 
-export function cloneLevel(level) {
+function cloneLevel(level) {
   return {
     cells: level.cells.map((cell) => ({ ...cell })),
     deck: level.deck.map((col) => col.map((item) => ({ ...item }))),
@@ -62,7 +63,7 @@ export function cloneLevel(level) {
   };
 }
 
-export function firstCell(cells, side, index) {
+function firstCell(cells, side, index) {
   const line = cells.filter((cell) => cell.hp > 0 && ((side === 'left' || side === 'right') ? cell.r === index : cell.c === index));
   if (!line.length) return null;
   line.sort((a, b) => {
@@ -74,7 +75,7 @@ export function firstCell(cells, side, index) {
   return line[0];
 }
 
-export function laneMarkers(cols, rows) {
+function laneMarkers(cols, rows) {
   const marks = [];
   for (let r = rows - 1; r >= 0; r--) marks.push({ side: 'left', index: r });
   for (let c = 0; c < cols; c++) marks.push({ side: 'top', index: c });
@@ -83,7 +84,7 @@ export function laneMarkers(cols, rows) {
   return marks;
 }
 
-export function resolveLane(cells, side, index, color) {
+function resolveLane(cells, side, index, color) {
   const first = firstCell(cells, side, index);
   if (!first) return { kind: 'empty' };
   if (first.color !== color) return { kind: 'blocked', cell: first };
@@ -96,7 +97,7 @@ export function resolveLane(cells, side, index, color) {
   return { kind: 'hit', cell: first, removed: false };
 }
 
-export function validLanes(cells, color, cols, rows) {
+function validLanes(cells, color, cols, rows) {
   let count = 0;
   for (const mark of laneMarkers(cols, rows)) {
     const first = firstCell(cells, mark.side, mark.index);
@@ -105,7 +106,7 @@ export function validLanes(cells, color, cols, rows) {
   return count;
 }
 
-export function fronts(state) {
+function fronts(state) {
   const options = [];
   state.deck.forEach((col, index) => {
     if (col.length) options.push({ where: 'deck', index, gunner: col[0] });
@@ -130,7 +131,7 @@ function park(state, gunner) {
   return true;
 }
 
-export function simulateLap(state, gunner) {
+function simulateLap(state, gunner) {
   const marks = laneMarkers(state.cols, state.rows);
   let hits = 0;
   for (const mark of marks) {
@@ -144,7 +145,7 @@ export function simulateLap(state, gunner) {
   return hits;
 }
 
-export function greedyClear(level) {
+function greedyClear(level) {
   const state = cloneLevel(level);
   let guard = 0;
   while (state.cells.length && guard++ < 80) {
@@ -167,7 +168,7 @@ export function greedyClear(level) {
   return state.cells.length === 0;
 }
 
-export function ammoMatches(level) {
+function ammoMatches(level) {
   const need = {};
   for (const cell of level.cells) need[cell.color] = (need[cell.color] || 0) + cell.hp;
   const have = {};
@@ -177,3 +178,6 @@ export function ammoMatches(level) {
   return Object.keys(need).every((color) => need[color] === have[color])
     && Object.keys(have).every((color) => need[color] === have[color]);
 }
+
+  root.FlowLogic = { COLORS, picture, LEVELS, cloneLevel, firstCell, laneMarkers, resolveLane, validLanes, fronts, simulateLap, greedyClear, ammoMatches };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
