@@ -49,7 +49,7 @@ function statsOf(radii) {
   const com = vSum ? hNum / ((n - 1) * vSum) : 0.5;
   const tip = (radii[n - 3] + radii[n - 2] + radii[n - 1]) / 3;
   const mu = 0.35 + 1.6 * tip;
-  const decay = (0.18 * mu) / (inertia + 0.02);
+  const decay = (0.04 * mu) / (inertia + 0.08);
   const stamina = Math.log(1 / 0.12) / decay;
   const traction = 0.2 + 1.8 * tip;
   const wobbleAt = 0.12 + 0.45 * com;
@@ -125,7 +125,7 @@ function separateRim(top) {
   const nx = top.x / rad;
   const ny = top.y / rad;
   const outward = top.vx * nx + top.vy * ny;
-  if (outward > 260) {
+  if (outward > 150) {
     top.out = 'edge';
     return;
   }
@@ -183,8 +183,8 @@ function collide(a, b) {
   b.vx += (impulse / b.m) * nx;
   b.vy += (impulse / b.m) * ny;
   const impact = -rel;
-  const hurtB = Math.min(0.25, 0.0009 * impact * (a.R / Math.max(0.08, b.R)) * (a.m / total));
-  const hurtA = Math.min(0.25, 0.0009 * impact * (b.R / Math.max(0.08, a.R)) * (b.m / total));
+  const hurtB = Math.min(0.014, 0.00007 * impact * (a.R / Math.max(0.08, b.R)) * (a.m / total));
+  const hurtA = Math.min(0.014, 0.00007 * impact * (b.R / Math.max(0.08, a.R)) * (b.m / total));
   a.w = Math.max(0, a.w - hurtA);
   b.w = Math.max(0, b.w - hurtB);
   return impulse;
@@ -197,11 +197,53 @@ function cone(tip, body = 0.85) {
   });
 }
 
+const LAUNCH_SCALE = 1.15;
+
 const OPPONENTS = [
-  { name: 'Pine Pawn', color: '#e2b15c', radii: shaped(0.5, 0.72, 0.55), pull: 80 },
-  { name: 'Flat Jack', color: '#ff6f59', radii: shaped(0.78, 0.96, 0.72), pull: 120 },
-  { name: 'Needle', color: '#8fd0ff', radii: shaped(0.14, 0.84, 0.6), pull: 100 },
+  { name: 'Pine Pawn', color: '#e2b15c', radii: shaped(0.45, 0.74, 0.48), pull: 64, omega: 0.7, aim: 0.1 },
+  { name: 'Flat Jack', color: '#ff6f59', radii: shaped(0.62, 0.94, 0.58), pull: 72, omega: 0.78, aim: -0.08 },
+  { name: 'Needle', color: '#8fd0ff', radii: shaped(0.085, 0.75, 0.43), pull: 86, omega: 1.0, aim: 0 },
 ];
 
-  root.TopLogic = { SLICES, makeRng, blank, cutProfile, statsOf, shaped, designTop, ARENA, launchTop, stepTop, collide, cone, OPPONENTS };
+function fightSim(playerRadii, fightIndex, aim, pull, seed) {
+  const opp = OPPONENTS[fightIndex];
+  const player = designTop(playerRadii, 'You', '#3ecfb2', 0, ARENA * 0.62);
+  const enemy = designTop(opp.radii, opp.name, opp.color, 0, -ARENA * 0.62);
+  const len = Math.max(0, Math.min(160, pull));
+  const omega = 0.55 + 0.45 * (len / 160);
+  const speed = len * LAUNCH_SCALE;
+  launchTop(player, Math.cos(aim) * speed, Math.sin(aim) * speed, omega);
+  const enemySpeed = opp.pull * 0.85;
+  launchTop(enemy, Math.sin(opp.aim) * enemySpeed * 0.25, enemySpeed, opp.omega);
+  const rng = makeRng(seed == null ? 1 : seed);
+  const step = 1 / 120;
+  let time = 0;
+  let hits = 0;
+  let guard = 0;
+  while (!player.out && !enemy.out && time < 45 && guard++ < 12000) {
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    enemy.vx += 130 * (dx / dist) * step;
+    enemy.vy += 130 * (dy / dist) * step;
+    stepTop(player, step, rng);
+    stepTop(enemy, step, rng);
+    const impulse = collide(player, enemy);
+    if (impulse > 8) hits += 1;
+    time += step;
+  }
+  const won = !player.out && (Boolean(enemy.out) || player.w >= enemy.w);
+  return {
+    won,
+    time,
+    hits,
+    reason: player.out || (enemy.out ? 'ko' : 'time'),
+    playerSpin: player.w,
+    enemySpin: enemy.w,
+  };
+}
+
+  root.TopLogic = {
+    SLICES, makeRng, blank, cutProfile, statsOf, shaped, designTop, ARENA, launchTop, stepTop, collide, cone, OPPONENTS, fightSim, LAUNCH_SCALE,
+  };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

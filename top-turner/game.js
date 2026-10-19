@@ -1,5 +1,7 @@
+const RL = globalThis.TopLogic;
 const {
   ARENA,
+  LAUNCH_SCALE,
   OPPONENTS,
   blank,
   collide,
@@ -9,7 +11,7 @@ const {
   makeRng,
   statsOf,
   stepTop,
-} = globalThis.TopLogic;
+} = RL;
 
 const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 const stage = document.getElementById('stage');
@@ -19,6 +21,8 @@ const startEl = document.getElementById('start');
 const helpEl = document.getElementById('help');
 const overEl = document.getElementById('over');
 const winEl = document.getElementById('win');
+const pauseEl = document.getElementById('pause');
+const SAVE_KEY = 'top-turner-progress-v1';
 
 let ignoreUntil = 0;
 let W = 800;
@@ -51,8 +55,31 @@ let perfect = false;
 let battleBox = null;
 let actx = null;
 let keys = new Set();
+let pointerCarve = false;
+let muted = false;
+let paused = false;
+let hitStop = 0;
+let perfectPop = 0;
+let sparks = [];
+let settle = null;
+let banner = '';
+let progress = loadProgress();
+
+function loadProgress() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+    return { unlocked: raw.unlocked || 1, mute: Boolean(raw.mute), best: raw.best || 0 };
+  } catch (err) {
+    return { unlocked: 1, mute: false, best: 0 };
+  }
+}
+
+function saveProgress() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
+}
 
 function audio() {
+  if (muted) return null;
   if (!actx) actx = new AudioContext();
   if (actx.state === 'suspended') actx.resume();
   return actx;
@@ -61,6 +88,7 @@ function audio() {
 function blip(freq, dur = 0.07, type = 'square', gain = 0.04) {
   try {
     const ac = audio();
+    if (!ac) return;
     const t = ac.currentTime;
     const osc = ac.createOscillator();
     const amp = ac.createGain();
@@ -90,7 +118,8 @@ function overlaysOpen() {
   return !helpEl.classList.contains('hidden')
     || !startEl.classList.contains('hidden')
     || !overEl.classList.contains('hidden')
-    || !winEl.classList.contains('hidden');
+    || !winEl.classList.contains('hidden')
+    || !pauseEl.classList.contains('hidden');
 }
 
 function beginFight(index, keepShape, keepScore) {
@@ -126,26 +155,52 @@ function goBattle() {
 
 function fireLaunch(pull, aim, isPerfect) {
   const len = Math.max(0, Math.min(160, pull));
-  const omega = (0.6 + 0.4 * (len / 160)) * (isPerfect ? 1.15 : 1);
-  const speed = len * 3.2;
+  const omega = (0.55 + 0.45 * (len / 160)) * (isPerfect ? 1.15 : 1);
+  const speed = len * LAUNCH_SCALE;
   launchTop(player, Math.cos(aim) * speed, Math.sin(aim) * speed, omega);
   const opp = OPPONENTS[fight];
-  launchTop(enemy, 0, opp.pull * 1.5, 0.62);
+  const enemySpeed = opp.pull * 0.85;
+  launchTop(enemy, Math.sin(opp.aim || 0) * enemySpeed * 0.25, enemySpeed, opp.omega);
   player.omega0 = omega;
   mode = 'battle';
   battleT = 0;
   dash = 100;
-  if (isPerfect) blip(880, 0.12, 'sine', 0.05);
+  settle = null;
+  banner = '';
+  if (isPerfect) {
+    perfectPop = 0.9;
+    blip(880, 0.12, 'sine', 0.05);
+  }
+}
+
+function reasonLine(won, reason) {
+  const you = player && player.stats ? player.stats.stamina.toFixed(1) : '?';
+  const them = enemy && enemy.stats ? enemy.stats.stamina.toFixed(1) : '?';
+  if (reason === 'edge') return won ? `${OPPONENTS[fight].name} went over the edge` : 'Over the edge: the rim caught a fast launch';
+  if (reason === 'spin') return won ? `${OPPONENTS[fight].name} spun out (${them}s)` : `Spun out: stamina ${you}s vs ${them}s`;
+  if (reason === 'time') return won ? 'You outlasted the clock' : 'Outspun when time ran out';
+  return won ? `Knocked out ${OPPONENTS[fight].name}` : 'Knocked out';
 }
 
 function finishBattle(won, reason) {
+  if (settle || mode === 'win' || mode === 'over') return;
+  settle = { t: 0, won, reason };
+  banner = won ? 'KNOCKED OUT' : (reason === 'edge' ? 'OVER THE EDGE' : reason === 'time' ? 'OUTSPUN' : 'SPUN OUT');
+  mode = 'settle';
+  blip(won ? 520 : 90, 0.16, won ? 'sine' : 'triangle', 0.05);
+}
+
+function revealResult(won, reason) {
   const ratio = player.omega0 ? Math.max(0, player.w / player.omega0) : 0;
   const gained = won ? Math.round(1000 * ratio + 500 + (perfect ? 200 : 0)) : 0;
   score = levelStartScore + gained;
   if (won) {
     const last = fight >= OPPONENTS.length - 1;
     document.getElementById('winTitle').textContent = last ? 'YOU WIN' : 'CLEARED';
-    document.getElementById('winScore').textContent = `${OPPONENTS[fight].name} down  ·  Score ${score}`;
+    document.getElementById('winScore').textContent = `${reasonLine(true, reason)}  ·  Score ${score}`;
+    progress.unlocked = Math.max(progress.unlocked || 1, Math.min(OPPONENTS.length, fight + 2));
+    progress.best = Math.max(progress.best || 0, score);
+    saveProgress();
     document.getElementById('nextBtn').classList.toggle('hidden', last);
     document.getElementById('againBtn').classList.toggle('hidden', !last);
     winEl.classList.remove('hidden');
@@ -156,7 +211,7 @@ function finishBattle(won, reason) {
   } else {
     const title = reason === 'edge' ? 'OVER THE EDGE' : reason === 'time' ? 'OUTSPUN' : 'SPUN OUT';
     document.getElementById('overTitle').textContent = title;
-    document.getElementById('finalScore').textContent = `Score ${levelStartScore}  ·  Fight ${fight + 1}`;
+    document.getElementById('finalScore').textContent = `${reasonLine(false, reason)}  ·  Fight ${fight + 1}`;
     overEl.classList.remove('hidden');
     document.getElementById('retryLevelBtn').focus();
   }
@@ -164,11 +219,33 @@ function finishBattle(won, reason) {
 }
 
 function latheGeom() {
-  const top = 100;
-  const bottom = H - 130;
-  const axisX = Math.min(W * 0.42, W - 280);
-  const scale = 118;
-  return { top, bottom, axisX, scale, slice: (bottom - top) / radii.length };
+  const slices = radii.length;
+  const landscape = W > H;
+  if (landscape) {
+    const top = 1;
+    const bottom = H - 1;
+    const slice = (bottom - top) / slices;
+    const scale = Math.min(118, (bottom - top) * 0.22);
+    const axisX = scale + 16;
+    const statsX = axisX + scale + 18;
+    return {
+      top, bottom, axisX, scale, slice, landscape,
+      statsX, statsY: 20, statsW: Math.max(120, W - statsX - 16), statsH: 150,
+      battle: { x: statsX, y: H - 64, w: Math.min(200, W - statsX - 16), h: 52 },
+    };
+  }
+  const battleH = 70;
+  const statsH = 128;
+  const top = 86;
+  const bottom = Math.max(top + slices * 12, H - battleH - statsH);
+  const slice = (bottom - top) / slices;
+  const scale = Math.min(W * 0.3, 130, (W / 2) - 10);
+  const axisX = W / 2;
+  return {
+    top, bottom, axisX, scale, slice, landscape: false,
+    statsX: 20, statsY: bottom + 10, statsW: W - 40, statsH: statsH - 16,
+    battle: { x: W / 2 - 84, y: H - 62, w: 168, h: 52 },
+  };
 }
 
 function carveAt(x, y, dt) {
@@ -189,8 +266,20 @@ function update(dt) {
     chip.y += chip.vy * dt;
   }
   chips = chips.filter((chip) => chip.life > 0);
-  if (!started || overlaysOpen()) return;
-  if (mode === 'carve' && (cutting || keys.has(' '))) {
+  perfectPop = Math.max(0, perfectPop - dt);
+  sparks = sparks.filter((spark) => {
+    spark.life -= dt;
+    spark.x += spark.vx * dt;
+    spark.y += spark.vy * dt;
+    return spark.life > 0;
+  });
+  if (!started || overlaysOpen() || paused) return;
+  if (mode === 'settle' && settle) {
+    settle.t += dt;
+    if (settle.t >= 0.55) revealResult(settle.won, settle.reason);
+    return;
+  }
+  if (mode === 'carve' && keys.has(' ') && !pointerCarve) {
     const g = latheGeom();
     const y = g.top + (chiselIndex + 0.5) * g.slice;
     carveAt(g.axisX + chiselCut * g.scale, y, dt);
@@ -207,6 +296,10 @@ function update(dt) {
     }
   }
   if (mode !== 'battle') return;
+  if (hitStop > 0) {
+    hitStop = Math.max(0, hitStop - dt);
+    return;
+  }
   const step = 1 / 120;
   for (let n = 0; n < 2; n++) {
     if (dashing && dash > 0 && player && !player.out) {
@@ -221,13 +314,21 @@ function update(dt) {
     stepTop(player, step, rng);
     stepTop(enemy, step, rng);
     const hit = collide(player, enemy);
-    if (hit > 40) blip(180 + Math.min(80, hit), 0.04, 'square', 0.03);
-    if (enemy && !enemy.out && dash > 50) {
+    if (hit > 8) {
+      hitStop = 0.03;
+      blip(220 + Math.min(80, hit), 0.05, 'square', 0.04);
+      const spot = arenaPoint((player.x + enemy.x) / 2, (player.y + enemy.y) / 2);
+      for (let i = 0; i < 8; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        sparks.push({ x: spot.x, y: spot.y, vx: Math.cos(ang) * 140, vy: Math.sin(ang) * 140, life: 0.35, color: '#ffe08a' });
+      }
+    }
+    if (enemy && !enemy.out && player && !player.out) {
       const dx = player.x - enemy.x;
       const dy = player.y - enemy.y;
       const len = Math.hypot(dx, dy) || 1;
-      enemy.vx += 220 * (dx / len) * step;
-      enemy.vy += 220 * (dy / len) * step;
+      enemy.vx += 130 * (dx / len) * step;
+      enemy.vy += 130 * (dy / len) * step;
     }
     if (player.out) {
       finishBattle(false, player.out === 'edge' ? 'edge' : 'spin');
@@ -271,15 +372,15 @@ function drawBlank() {
   roundRect(W / 2 - 70, 28, 140, 36, 14);
   ctx.fillStyle = 'rgba(255,246,234,.9)';
   ctx.fill();
-  chunkText(`Fight ${fight + 1}`, W / 2, 46, 20, '#fff6ea');
+  chunkText(`Fight ${fight + 1}`, W / 2, 46, 20, '#3a2414', '#fff6ea');
   chunkText(OPPONENTS[fight].name, W / 2, 78, 16, '#ffe08a', '#3a2414');
   const scoreLabel = String(score);
-  ctx.font = `700 24px ${FONT}`;
-  const scoreW = Math.max(64, ctx.measureText(scoreLabel).width + 22);
-  roundRect(W - 16 - scoreW, 26, scoreW, 34, 12);
+  ctx.font = `700 18px ${FONT}`;
+  const scoreW = Math.max(52, ctx.measureText(scoreLabel).width + 16);
+  roundRect(16, 54, scoreW, 28, 10);
   ctx.fillStyle = 'rgba(255,246,234,.9)';
   ctx.fill();
-  chunkText(scoreLabel, W - 16 - scoreW / 2, 43, 22, '#fff4c2');
+  chunkText(scoreLabel, 16 + scoreW / 2, 68, 16, '#3a2414', '#fff6ea');
 
   ctx.fillStyle = '#3a342f';
   ctx.fillRect(g.axisX - 18, g.top - 28, 36, 22);
@@ -323,26 +424,27 @@ function drawBlank() {
     ['Reach', stats.bars.reach],
     ['Speed', stats.bars.speed],
   ];
-  const panelX = Math.min(W - 210, g.axisX + g.scale + 36);
+  const panelX = g.statsX;
+  const panelY = g.statsY;
   ctx.textAlign = 'left';
-  chunkText(stats.label, panelX, g.top + 10, 22, '#fff6ea', '#3a2414');
+  chunkText(stats.label, panelX, panelY, 18, '#fff6ea', '#3a2414');
   labels.forEach((row, i) => {
-    const y = g.top + 48 + i * 36;
-    chunkText(row[0], panelX, y, 14, '#fff6ea', '#3a2414');
-    roundRect(panelX, y + 12, 150, 10, 5);
+    const y = panelY + 22 + i * 22;
+    chunkText(row[0], panelX, y, 12, '#fff6ea', '#3a2414');
+    roundRect(panelX + 78, y - 6, Math.min(120, g.statsW - 86), 8, 4);
     ctx.fillStyle = 'rgba(255,255,255,.15)';
     ctx.fill();
-    roundRect(panelX, y + 12, 150 * row[1], 10, 5);
+    roundRect(panelX + 78, y - 6, Math.min(120, g.statsW - 86) * row[1], 8, 4);
     ctx.fillStyle = '#e2b15c';
     ctx.fill();
   });
 
-  battleBox = { x: W / 2 - 70, y: H - 64, w: 140, h: 40 };
+  battleBox = g.battle;
   roundRect(battleBox.x, battleBox.y, battleBox.w, battleBox.h, 16);
   ctx.fillStyle = '#e2b15c';
   ctx.fill();
   ctx.textAlign = 'center';
-  chunkText('Battle', W / 2, battleBox.y + 20, 20, '#3a2414', '#8a6230');
+  chunkText('Battle', battleBox.x + battleBox.w / 2, battleBox.y + battleBox.h / 2, 20, '#3a2414', '#8a6230');
   for (const chip of chips) {
     ctx.globalAlpha = Math.max(0, chip.life / 0.4);
     ctx.fillStyle = chip.color;
@@ -419,15 +521,34 @@ function drawArena() {
     }
     chunkText('Pull back, release on the ring', W / 2, H - 36, 16, '#fff6ea', '#1b1612');
   } else if (player) {
-    drawTop(player, spinAnim * (player.w || 0) * 6);
-    drawTop(enemy, spinAnim * (enemy.w || 0) * 6);
+    const tilt = mode === 'settle' && settle && !settle.won ? Math.min(0.8, settle.t * 2) : 0;
+    drawTop(player, spinAnim * (player.w || 0) * 6 + (settle && !settle.won ? tilt : 0));
+    drawTop(enemy, spinAnim * (enemy.w || 0) * 6 + (settle && settle.won ? tilt : 0));
     roundRect(24, H - 36, 120, 12, 6);
     ctx.fillStyle = 'rgba(255,255,255,.2)';
     ctx.fill();
     roundRect(24, H - 36, 120 * (dash / 100), 12, 6);
     ctx.fillStyle = '#3ecfb2';
     ctx.fill();
+    if (player && enemy) {
+      chunkText(`You ${Math.round(player.w * 100)}`, 70, 78, 13, '#3ecfb2', '#10241f');
+      chunkText(`${Math.round(enemy.w * 100)}`, W - 70, 78, 13, enemy.color, '#10241f');
+    }
   }
+  if (perfectPop > 0) {
+    ctx.globalAlpha = Math.min(1, perfectPop);
+    chunkText('PERFECT', W / 2, H * 0.38, 42, '#fff6ea', '#8a6230');
+    ctx.globalAlpha = 1;
+  }
+  if (banner) {
+    chunkText(banner, W / 2, H * 0.22, 36, '#fff6ea', '#6a3e22');
+  }
+  for (const spark of sparks) {
+    ctx.globalAlpha = Math.max(0, spark.life / 0.35);
+    ctx.fillStyle = spark.color;
+    ctx.fillRect(spark.x, spark.y, 4, 4);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function render() {
@@ -456,8 +577,14 @@ function armOverlayLock() {
   ignoreUntil = performance.now() + 320;
 }
 
+function pointerInside(e) {
+  if (!e || e.clientX == null) return false;
+  const rect = canvas.getBoundingClientRect();
+  return e.clientX >= rect.left && e.clientY >= rect.top && e.clientX <= rect.right && e.clientY <= rect.bottom;
+}
+
 function onDown(e) {
-  if (!started || overlaysOpen() || performance.now() < ignoreUntil) return;
+  if (!started || overlaysOpen() || paused || performance.now() < ignoreUntil) return;
   audio();
   const p = pointerPos(e);
   if (mode === 'carve') {
@@ -465,34 +592,37 @@ function onDown(e) {
       goBattle();
       return;
     }
-    cutting = true;
+    pointerCarve = true;
     carveAt(p.x, p.y, 0.05);
-    drag = { id: e.pointerId, x: p.x, y: p.y };
-  } else if (mode === 'launch') {
-    drag = { id: e.pointerId, x: p.x, y: p.y };
+    drag = { id: e.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y };
+  } else if (mode === 'launch' && player) {
+    const spot = arenaPoint(player.x, player.y);
+    const radius = player.rho * spot.scale;
+    if (Math.hypot(p.x - spot.x, p.y - spot.y) > radius * 2.2) return;
+    drag = { id: e.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y };
+    launchPull = 0;
   } else if (mode === 'battle' && player) {
     dashing = true;
     const spot = arenaPoint(player.x, player.y);
     dashX = p.x - spot.x;
     dashY = p.y - spot.y;
-    drag = { id: e.pointerId, x: p.x, y: p.y };
+    drag = { id: e.pointerId, x: p.x, y: p.y, startX: p.x, startY: p.y };
   }
   e.preventDefault();
 }
 
 function onMove(e) {
   if (!drag || e.pointerId !== drag.id) return;
+  if (!pointerInside(e)) return;
   const p = pointerPos(e);
   drag.x = p.x;
   drag.y = p.y;
-  if (mode === 'carve' && cutting) carveAt(p.x, p.y, 0.016);
+  if (mode === 'carve' && pointerCarve) carveAt(p.x, p.y, 0.016);
   if (mode === 'launch' && player) {
-    const spot = arenaPoint(player.x, player.y);
-    const dx = p.x - spot.x;
-    const dy = p.y - spot.y;
-    const len = Math.min(160, Math.hypot(dx, dy));
-    launchPull = len;
-    launchAim = Math.atan2(-dy, -dx);
+    const dx = p.x - drag.startX;
+    const dy = p.y - drag.startY;
+    launchPull = Math.min(160, Math.hypot(dx, dy));
+    if (launchPull > 4) launchAim = Math.atan2(-dy, -dx);
   }
   if (mode === 'battle' && player) {
     const spot = arenaPoint(player.x, player.y);
@@ -501,18 +631,22 @@ function onMove(e) {
   }
 }
 
-function onUp(e) {
-  if (!drag || e.pointerId !== drag.id) return;
+function releaseDrag(e) {
+  if (!drag || (e && e.pointerId != null && e.pointerId !== drag.id)) return;
   if (mode === 'launch' && player && launchPull > 12) {
     const spot = arenaPoint(player.x, player.y);
     const ring = 70 - ((spinAnim % 1.2) / 1.2) * 58;
-    const perfectNow = Math.abs(ring - player.rho * (Math.min(W, H) * 0.78) / (ARENA * 2)) < 10;
+    const perfectNow = Math.abs(ring - player.rho * spot.scale) < 10;
     perfect = perfectNow;
     fireLaunch(launchPull, launchAim, perfectNow);
   }
-  cutting = false;
+  pointerCarve = false;
   dashing = false;
   drag = null;
+}
+
+function onUp(e) {
+  releaseDrag(e);
 }
 
 function frame(now) {
@@ -599,15 +733,50 @@ document.getElementById('againBtn').addEventListener('click', (e) => {
   startRun();
   armOverlayLock();
 });
+function toggleMute() {
+  muted = !muted;
+  progress.mute = muted;
+  saveProgress();
+  const btn = document.getElementById('muteBtn');
+  btn.textContent = muted ? 'Muted' : 'Sound';
+  btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+}
+
+function restartFight() {
+  pauseEl.classList.add('hidden');
+  paused = false;
+  overEl.classList.add('hidden');
+  winEl.classList.add('hidden');
+  settle = null;
+  banner = '';
+  beginFight(fight, false, levelStartScore);
+}
+
+document.getElementById('muteBtn').addEventListener('click', (e) => { e.currentTarget.blur(); toggleMute(); });
+document.getElementById('pauseBtn').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  if (!started || !startEl.classList.contains('hidden')) return;
+  paused = true;
+  pauseEl.classList.remove('hidden');
+});
+document.getElementById('resumeBtn').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  pauseEl.classList.add('hidden');
+  paused = false;
+  armOverlayLock();
+});
+document.getElementById('restartBtn').addEventListener('click', (e) => { e.currentTarget.blur(); restartFight(); });
+
 canvas.addEventListener('pointerdown', onDown);
 canvas.addEventListener('pointermove', onMove);
-canvas.addEventListener('pointerup', onUp);
-canvas.addEventListener('pointercancel', () => { drag = null; cutting = false; dashing = false; });
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', (e) => releaseDrag(e));
 window.addEventListener('keydown', (e) => {
   if (!helpEl.classList.contains('hidden')) {
     if (e.key === 'Escape') {
       e.preventDefault();
       helpEl.classList.add('hidden');
+      armOverlayLock();
     }
     return;
   }
@@ -618,7 +787,28 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  if (!overEl.classList.contains('hidden') || !winEl.classList.contains('hidden')) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (!pauseEl.classList.contains('hidden')) {
+      pauseEl.classList.add('hidden');
+      paused = false;
+    } else if (mode === 'battle' || mode === 'carve' || mode === 'launch' || mode === 'settle') {
+      paused = true;
+      pauseEl.classList.remove('hidden');
+    }
+    return;
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    e.preventDefault();
+    toggleMute();
+    return;
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    restartFight();
+    return;
+  }
+  if (!overEl.classList.contains('hidden') || !winEl.classList.contains('hidden') || !pauseEl.classList.contains('hidden')) return;
   const key = e.key.toLowerCase();
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(key)) e.preventDefault();
   audio();
@@ -646,6 +836,12 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('resize', resize);
 resize();
 beginFight(0, false, 0);
+muted = Boolean(progress.mute);
+const muteBtn = document.getElementById('muteBtn');
+if (muteBtn) {
+  muteBtn.textContent = muted ? 'Muted' : 'Sound';
+  muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+}
 window.__game = {
   get: () => ({
     mode,
@@ -654,10 +850,36 @@ window.__game = {
     label: statsOf(radii).label,
     stamina: statsOf(radii).stamina,
     started,
-    phase: winEl.classList.contains('hidden') ? (overEl.classList.contains('hidden') ? mode : 'over') : 'win',
+    muted,
+    paused,
+    pull: launchPull,
+    phase: !winEl.classList.contains('hidden') ? 'win' : (!overEl.classList.contains('hidden') ? 'over' : (!pauseEl.classList.contains('hidden') ? 'pause' : mode)),
   }),
   battle() { goBattle(); },
   launch(pull, aim, isPerfect) { fireLaunch(pull, aim, isPerfect); },
   radii() { return radii.slice(); },
+  launchPoint() {
+    if (!player) return null;
+    const spot = arenaPoint(player.x, player.y);
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (spot.x / W) * rect.width,
+      y: rect.top + (spot.y / H) * rect.height,
+    };
+  },
+  lathe() {
+    const g = latheGeom();
+    return {
+      axisX: g.axisX,
+      top: g.top,
+      bottom: g.bottom,
+      scale: g.scale,
+      slice: g.slice,
+      stats: { x: g.statsX, y: g.statsY, w: g.statsW, h: g.statsH },
+      battle: g.battle,
+      width: W,
+      height: H,
+    };
+  },
 };
 requestAnimationFrame(frame);

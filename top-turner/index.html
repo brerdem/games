@@ -19,10 +19,13 @@
   }
   #stage {
     position: relative;
-    width: min(100vw, 1080px, calc(100dvh * 1.05));
+    width: min(100vw, 430px);
     height: 100dvh;
     background: #1b1612;
     overflow: hidden;
+  }
+  @media (max-height: 520px) and (orientation: landscape) {
+    #stage { width: 100vw; height: 100dvh; }
   }
   canvas { width: 100%; height: 100%; display: block; touch-action: none; }
   .overlay {
@@ -69,6 +72,16 @@
   }
   button.secondary:active { transform: none; box-shadow: none; background: rgba(255,255,255,.1); }
   button.hidden { display: none; }
+  button.hud {
+    position: absolute;
+    z-index: 3;
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 14px;
+    box-shadow: none;
+  }
+  #muteBtn { top: 8px; right: 8px; }
+  #pauseBtn { top: 8px; left: 8px; }
   #over button, #win button {
     width: min(420px, 100%);
     padding: 14px 28px;
@@ -95,6 +108,8 @@
 <body>
   <div id="stage">
     <canvas id="c"></canvas>
+    <button type="button" id="pauseBtn" class="secondary hud">Pause</button>
+    <button type="button" id="muteBtn" class="secondary hud" aria-pressed="false">Sound</button>
     <div id="start" class="overlay">
       <h1>TOP TURNER</h1>
       <button type="button" id="startBtn">Start</button>
@@ -105,7 +120,7 @@
         <h2 id="helpTitle">How to play</h2>
         <p><strong>Carve.</strong> Drag across the spinning blank to shave it. A wide body is heavy. A narrow tip spins longer, and a flat tip drives around the bowl. Up and down pick a slice, left and right set the cut, and Space shaves.</p>
         <p><strong>Launch.</strong> Press Battle, then pull back and release. Let go as the ring meets the top for a perfect launch. On the keyboard, left and right aim, and Space charges the pull. Release Space to launch.</p>
-        <p><strong>Battle.</strong> Hold toward where you want to dash. Arrow keys dash too. Dashing spends spin. You win if yours is the last top spinning. You lose if you spin out or fly over the rim.</p>
+        <p><strong>Battle.</strong> Hold toward where you want to dash. Arrow keys dash too. Dashing spends spin. You win if yours is the last top spinning. You lose if you spin out or fly over the rim. R restarts this fight. M mutes. Esc pauses. If a pull leaves the screen, the throw uses the last point that was still on the blank's stage.</p>
         <button type="button" id="helpClose">Close</button>
       </div>
     </div>
@@ -121,6 +136,11 @@
       <button type="button" id="nextBtn">Next</button>
       <button type="button" id="replayBtn">Replay</button>
       <button type="button" id="againBtn" class="hidden">Play again</button>
+    </div>
+    <div id="pause" class="overlay hidden">
+      <h1>PAUSED</h1>
+      <button type="button" id="resumeBtn">Resume</button>
+      <button type="button" class="secondary" id="restartBtn">Restart fight</button>
     </div>
   </div>
   <script src="logic.js"></script>
