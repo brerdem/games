@@ -53,6 +53,6 @@ Unverified: a physical phone, and whether an 81 second careful clear feels tense
 ## Delivery
 
 - URL: https://brerdem.github.io/games/flow-fort/
-- Commit: the `main` commit that adds this rebuild
+- Commit: `1da12a0` on `main`
 - Build: GitHub Actions workflow `ci`, job `flow-fort`, plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Flow Fort. Other games were not changed except the shared CI workflow, which gained a `flow-fort` job.
