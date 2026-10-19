@@ -58,6 +58,6 @@ Unverified: a physical phone, Safari file://, and a second machine's 4× throttl
 ## Delivery
 
 - URL: https://brerdem.github.io/games/ring-out/
-- Commit: the `main` commit that adds this rebuild
+- Commit: `db07643` on `main` (this notes tweak may sit one commit later)
 - Build: GitHub Actions workflow `ci` (job `ring-out`) plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Ring Out against this table. Flow Fort and Top Turner only changed shell packaging, win focus, help scroll, and the post-overlay input lock.
