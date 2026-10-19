@@ -1,4 +1,5 @@
-const { COLORS, LEVELS, resolveLane } = globalThis.FlowLogic;
+const RL = globalThis.FlowLogic;
+const { COLORS, LEVELS, resolveLane } = RL;
 
 const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 const stage = document.getElementById('stage');
@@ -8,8 +9,11 @@ const startEl = document.getElementById('start');
 const helpEl = document.getElementById('help');
 const overEl = document.getElementById('over');
 const winEl = document.getElementById('win');
+const pauseEl = document.getElementById('pause');
+const SAVE_KEY = 'flow-fort-progress-v1';
 
 let ignoreUntil = 0;
+let overlayLiveAt = 0;
 let W = 800;
 let H = 900;
 let started = false;
@@ -38,8 +42,33 @@ let previewColor = null;
 let geom = null;
 let uid = 1;
 let actx = null;
+let calm = false;
+let muted = false;
+let paused = false;
+let jammedEver = false;
+let justBreached = false;
+let progress = loadProgress();
+
+function loadProgress() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+    return {
+      unlocked: raw.unlocked || 1,
+      stars: raw.stars || {},
+      mute: Boolean(raw.mute),
+      calm: Boolean(raw.calm),
+    };
+  } catch (err) {
+    return { unlocked: 1, stars: {}, mute: false, calm: false };
+  }
+}
+
+function saveProgress() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
+}
 
 function audio() {
+  if (muted) return null;
   if (!actx) actx = new AudioContext();
   if (actx.state === 'suspended') actx.resume();
   return actx;
@@ -48,6 +77,7 @@ function audio() {
 function blip(freq, dur = 0.08, type = 'square', gain = 0.04) {
   try {
     const ac = audio();
+    if (!ac) return;
     const t = ac.currentTime;
     const osc = ac.createOscillator();
     const amp = ac.createGain();
@@ -83,7 +113,9 @@ function freshBoard(keepScore) {
   hearts = 3;
   score = keepScore;
   advanceT = 0;
-  marching = levelNum !== 1;
+  marching = !calm && level.march !== 'afterLaunch';
+  jammedEver = false;
+  justBreached = false;
   dropT = 0;
   shake = 0;
   flash = 0;
@@ -111,18 +143,27 @@ function overlaysOpen() {
   return !helpEl.classList.contains('hidden')
     || !startEl.classList.contains('hidden')
     || !overEl.classList.contains('hidden')
-    || !winEl.classList.contains('hidden');
+    || !winEl.classList.contains('hidden')
+    || !pauseEl.classList.contains('hidden');
 }
 
 function showWin() {
   const empty = bench.filter((slot) => !slot).length;
   score += 100 * hearts + 50 * empty;
+  const stars = RL.starsFor(hearts, jammedEver, calm);
+  const prev = Number(progress.stars[level.id] || 0);
+  progress.stars[level.id] = Math.max(prev, stars);
+  progress.unlocked = Math.max(progress.unlocked || 1, Math.min(LEVELS.length, levelNum + 1));
+  saveProgress();
+  refreshContinue();
   const last = levelNum >= LEVELS.length;
   document.getElementById('winTitle').textContent = last ? 'YOU WIN' : 'CLEARED';
+  document.getElementById('winStars').textContent = '★★★'.slice(0, stars) + '☆☆☆'.slice(0, 3 - stars);
   document.getElementById('winScore').textContent = `Score ${score}`;
   document.getElementById('nextBtn').classList.toggle('hidden', last);
   document.getElementById('againBtn').classList.toggle('hidden', !last);
   winEl.classList.remove('hidden');
+  overlayLiveAt = performance.now() + 320;
   const focusBtn = last ? document.getElementById('againBtn') : document.getElementById('nextBtn');
   focusBtn.focus({ preventScroll: true });
   blip(523, 0.1, 'sine', 0.05);
@@ -134,7 +175,8 @@ function gameOver(reason) {
   document.getElementById('overTitle').textContent = title;
   document.getElementById('finalScore').textContent = `Score ${score}  ·  Lv ${levelNum}`;
   overEl.classList.remove('hidden');
-  document.getElementById('retryLevelBtn').focus();
+  overlayLiveAt = performance.now() + 320;
+  document.getElementById('retryLevelBtn').focus({ preventScroll: true });
 }
 
 function perimUnits() {
@@ -185,18 +227,58 @@ function burst(x, y, color, n = 8) {
 }
 
 function layout() {
-  const hud = Math.max(86, Math.min(116, H * 0.12));
-  const deckH = Math.max(132, Math.min(168, H * 0.18));
-  const benchH = 64;
-  const margin = 18;
-  const availW = W - margin * 2;
-  const availH = H - hud - deckH - benchH - 28;
-  const cell = Math.max(18, Math.floor(Math.min(availW / (level.cols + 2.4), availH / (level.rows + 2.4))));
-  const gridW = cell * level.cols;
-  const gridH = cell * level.rows;
-  const gx = (W - gridW) / 2;
-  const gy = hud + Math.max(8, (availH - gridH) / 2);
-  return { hud, deckH, cell, gx, gy, gap: Math.max(26, cell * 0.72), gridW, gridH };
+  const cols = level.cols;
+  const rows = level.rows;
+  const landscape = W > H;
+  const hud = landscape ? 58 : 92;
+  const margin = 12;
+  let side = 0;
+  let availW = W - margin * 2;
+  let availH = H - hud - (landscape ? 16 : 210);
+  if (landscape) {
+    side = Math.min(210, Math.max(156, W * 0.3));
+    availW = W - side - 18;
+    availH = H - hud - 12;
+  }
+  let cell = Math.floor(Math.min(availW / (cols + 2.8), availH / (rows + 2.8)));
+  cell = Math.max(11, cell);
+  const gap = Math.max(landscape ? 18 : 22, cell * 0.62);
+  const gridW = cell * cols;
+  const gridH = cell * rows;
+  const gx = landscape ? margin + gap : (W - gridW) / 2;
+  const gy = hud + (landscape ? 8 : 70);
+  const rail = { x: gx - gap, y: gy - gap, w: gridW + gap * 2, h: gridH + gap * 2 };
+  const benchSlots = [];
+  const deckXs = [];
+  let benchBox;
+  let deckBox;
+  if (landscape) {
+    const panelX = rail.x + rail.w + 14;
+    const panelW = Math.max(80, W - panelX - 8);
+    const slot = Math.min(36, (panelW - 8) / 5);
+    const benchY = gy + 28;
+    for (let i = 0; i < 5; i++) benchSlots.push({ x: panelX + slot / 2 + i * slot, y: benchY });
+    const colW = panelW / Math.max(1, deck.length);
+    deck.forEach((_, index) => deckXs.push(panelX + colW * index + colW / 2));
+    benchBox = { x: panelX, y: benchY - 30, w: panelW, h: 60 };
+    deckBox = { x: panelX, y: benchY + 40, w: panelW, h: Math.max(80, H - benchY - 52) };
+  } else {
+    const benchY = rail.y + rail.h + 36;
+    const slotW = Math.min(72, (W - 24) / 5);
+    const benchX0 = (W - slotW * 5) / 2;
+    for (let i = 0; i < 5; i++) benchSlots.push({ x: benchX0 + i * slotW + slotW / 2, y: benchY });
+    const colW = Math.min(110, (W - 28) / Math.max(1, deck.length));
+    const deckX0 = (W - colW * deck.length) / 2;
+    deck.forEach((_, index) => deckXs.push(deckX0 + index * colW + colW / 2));
+    benchBox = { x: benchX0, y: benchY - 30, w: slotW * 5, h: 60 };
+    deckBox = { x: deckX0, y: benchY + 36, w: colW * Math.max(1, deck.length), h: H - benchY - 40 };
+  }
+  return {
+    hud, cell, gx, gy, gap, gridW, gridH, rail, benchSlots, deckXs, benchBox, deckBox,
+    grid: { x: gx, y: gy, w: gridW, h: gridH },
+    deckY: landscape ? (benchSlots[0].y + 78) : (benchSlots[0].y + 78),
+    landscape,
+  };
 }
 
 function noGunnersLeft() {
@@ -205,6 +287,10 @@ function noGunnersLeft() {
 
 function checkEnd() {
   if (!overEl.classList.contains('hidden') || !winEl.classList.contains('hidden')) return;
+  if (justBreached) {
+    justBreached = false;
+    return;
+  }
   if (hearts <= 0) return;
   if (!cells.length) showWin();
   else if (noGunnersLeft()) gameOver('empty');
@@ -212,11 +298,12 @@ function checkEnd() {
 
 function loseHeart(reason) {
   hearts -= 1;
+  if (reason === 'jam') jammedEver = true;
   shake = reason === 'jam' ? 8 : 5;
   flash = 0.25;
   if (reason === 'jam') blip(90, 0.18, 'sawtooth', 0.05);
   else blip(70, 0.16, 'triangle', 0.05);
-  if (hearts <= 0) gameOver(reason);
+  if (hearts <= 0) gameOver(reason === 'jam' ? 'jam' : reason === 'empty' ? 'empty' : 'breach');
 }
 
 function finishLap(gunner) {
@@ -232,13 +319,13 @@ function finishLap(gunner) {
 }
 
 function advance() {
-  const doomed = cells.filter((cell) => cell.r >= level.rows - 1);
-  cells = cells.filter((cell) => cell.r < level.rows - 1);
-  for (const cell of cells) cell.r += 1;
+  const stepped = RL.applyAdvance(cells, level.rows);
+  cells = stepped.cells;
   dropT = 0.12;
   blip(55, 0.12, 'sine', 0.04);
-  if (doomed.length) {
-    burst(geom.gx + geom.gridW / 2, geom.gy + geom.gridH, '#ff5d6c', 10);
+  if (stepped.breached) {
+    justBreached = true;
+    burst(geom.gx + geom.gridW / 2, geom.gy + geom.gridH, '#ff5d6c', 14);
     loseHeart('breach');
   }
 }
@@ -261,7 +348,7 @@ function launch(where, index) {
     bench[index] = null;
   }
   rail.push({ id: uid++, color: gunner.color, ammo: gunner.ammo, dist: 0, seen: new Set() });
-  marching = true;
+  if (!calm) marching = true;
   blip(320, 0.05, 'square', 0.03);
   sel = { kind: where, index };
 }
@@ -313,8 +400,7 @@ function update(dt) {
   particles = particles.filter((bit) => bit.life > 0);
   for (const bullet of bullets) bullet.t += dt;
   bullets = bullets.filter((bullet) => bullet.t < 0.08);
-  if (!started || overlaysOpen() || !overEl.classList.contains('hidden') || !winEl.classList.contains('hidden')) return;
-  if (!winEl.classList.contains('hidden')) return;
+  if (!started || overlaysOpen() || paused) return;
   updateRail(dt);
   if (marching && cells.length && hearts > 0 && winEl.classList.contains('hidden') && overEl.classList.contains('hidden')) {
     advanceT += dt;
@@ -403,20 +489,20 @@ function render() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const hudY = Math.max(40, g.hud * 0.42);
-  roundRect(W / 2 - 54, hudY - 20, 108, 36, 14);
+  const hudY = g.landscape ? 30 : 78;
+  roundRect(W / 2 - 54, hudY - 18, 108, 34, 14);
   ctx.fillStyle = 'rgba(255,250,243,.9)';
   ctx.fill();
-  chunkText(`Lv ${levelNum}`, W / 2, hudY - 2, 22, '#fffaf3');
+  chunkText(`Lv ${levelNum}${calm ? ' · Calm' : ''}`, W / 2, hudY - 1, calm ? 15 : 18, '#243056');
   const scoreLabel = String(score);
-  ctx.font = `700 26px ${FONT}`;
-  const scoreW = Math.max(70, ctx.measureText(scoreLabel).width + 26);
-  roundRect(W - 16 - scoreW, hudY - 20, scoreW, 40, 14);
+  ctx.font = `700 18px ${FONT}`;
+  const scoreW = Math.max(52, ctx.measureText(scoreLabel).width + 18);
+  roundRect(16, hudY + 22, scoreW, 28, 10);
   ctx.fillStyle = 'rgba(255,250,243,.9)';
   ctx.fill();
-  chunkText(scoreLabel, W - 16 - scoreW / 2, hudY, 24, '#fff4c2');
-  for (let i = 0; i < 3; i++) drawHeart(32 + i * 32, hudY, i < hearts);
-  const barW = Math.min(220, W * 0.28);
+  chunkText(scoreLabel, 16 + scoreW / 2, hudY + 36, 16, '#243056');
+  for (let i = 0; i < 3; i++) drawHeart(W - 96 + i * 26, hudY + 36, i < hearts);
+  const barW = Math.min(120, W * 0.32);
   const barX = W / 2 - barW / 2;
   const barY = hudY + 28;
   roundRect(barX, barY, barW, 12, 6);
@@ -504,7 +590,7 @@ function render() {
     ctx.fill();
   }
 
-  const wallY = g.gy + g.gridH + g.gap + Math.max(18, g.cell * 0.42);
+  const wallY = g.gy + g.gridH + 2;
   ctx.fillStyle = '#c9b38f';
   for (let i = 0; i < 8; i++) {
     const bw = g.gridW / 8;
@@ -517,35 +603,31 @@ function render() {
   }
 
   targets = [];
-  const benchY = H - g.deckH - 36;
-  const slotW = Math.min(78, (W - 40) / 5);
-  const benchX0 = (W - slotW * 5) / 2;
-  for (let i = 0; i < 5; i++) {
-    const x = benchX0 + i * slotW + slotW / 2;
-    roundRect(x - 24, benchY - 24, 48, 48, 12);
+  g.benchSlots.forEach((slot, i) => {
+    roundRect(slot.x - 24, slot.y - 24, 48, 48, 12);
     ctx.fillStyle = 'rgba(255,255,255,.06)';
     ctx.fill();
     const gunner = bench[i];
     const selected = sel.kind === 'bench' && sel.index === i;
     if (gunner) {
-      drawGunner(x, benchY, COLORS[gunner.color], gunner.ammo, -Math.PI / 2, 20, selected);
-      targets.push({ kind: 'bench', index: i, x, y: benchY, r: 28 });
+      drawGunner(slot.x, slot.y, COLORS[gunner.color] || '#b47cff', gunner.ammo, -Math.PI / 2, g.landscape ? 16 : 20, selected);
+      targets.push({ kind: 'bench', index: i, x: slot.x, y: slot.y, r: g.landscape ? 22 : 28 });
     }
-  }
+  });
 
-  const colW = Math.min(120, (W - 48) / deck.length);
-  const deckX0 = (W - colW * deck.length) / 2;
   deck.forEach((col, index) => {
-    const x = deckX0 + index * colW + colW / 2;
+    const x = g.deckXs[index];
     const shown = col.slice(0, 4);
-    let frontY = H - 46;
+    const step = g.landscape ? 30 : 42;
+    const base = g.landscape ? g.deckY : Math.min(g.deckY, H - 52);
+    let frontY = base;
     for (let depth = shown.length - 1; depth >= 0; depth--) {
-      const y = H - 46 - (shown.length - 1 - depth) * 42;
+      const y = base + (shown.length - 1 - depth) * step;
       if (depth === 0) frontY = y;
       const selected = depth === 0 && sel.kind === 'deck' && sel.index === index;
-      drawGunner(x, y, COLORS[shown[depth].color], shown[depth].ammo, -Math.PI / 2, depth === 0 ? 28 : 16, selected);
+      drawGunner(x, y, COLORS[shown[depth].color] || '#b47cff', shown[depth].ammo, -Math.PI / 2, depth === 0 ? (g.landscape ? 18 : 26) : 14, selected);
     }
-    if (shown[0]) targets.push({ kind: 'deck', index, x, y: frontY, r: 32 });
+    if (shown[0]) targets.push({ kind: 'deck', index, x, y: frontY, r: g.landscape ? 22 : 32 });
   });
 
   for (let i = 0; i < level.cap; i++) {
@@ -602,8 +684,19 @@ function onMove(e) {
   }
 }
 
+function pointerInside(e) {
+  if (!e || e.clientX == null) return false;
+  const rect = canvas.getBoundingClientRect();
+  return e.clientX >= rect.left && e.clientY >= rect.top && e.clientX <= rect.right && e.clientY <= rect.bottom;
+}
+
 function onUp(e) {
-  if (!hold || e.pointerId !== hold.id) return;
+  if (!hold || (e && e.pointerId != null && e.pointerId !== hold.id)) return;
+  if (!pointerInside(e)) {
+    hold = null;
+    previewColor = null;
+    return;
+  }
   const p = pointerPos(e);
   const still = hitTarget(p.x, p.y);
   const same = still && still.kind === hold.target.kind && still.index === hold.target.index;
@@ -671,6 +764,7 @@ document.getElementById('retryBtn').addEventListener('click', (e) => {
   armOverlayLock();
 });
 document.getElementById('nextBtn').addEventListener('click', (e) => {
+  if (!overlayReady()) return;
   e.currentTarget.blur();
   winEl.classList.add('hidden');
   loadLevel(levelNum + 1, score);
@@ -683,20 +777,100 @@ document.getElementById('replayBtn').addEventListener('click', (e) => {
   armOverlayLock();
 });
 document.getElementById('againBtn').addEventListener('click', (e) => {
+  if (!overlayReady()) return;
   e.currentTarget.blur();
   winEl.classList.add('hidden');
   startRun();
   armOverlayLock();
 });
+document.getElementById('muteBtn').addEventListener('click', (e) => { e.currentTarget.blur(); toggleMute(); });
+document.getElementById('calmBtn').addEventListener('click', (e) => { e.currentTarget.blur(); toggleCalm(); });
+document.getElementById('pauseBtn').addEventListener('click', (e) => { e.currentTarget.blur(); openPause(); });
+document.getElementById('restartBtn').addEventListener('click', (e) => { e.currentTarget.blur(); restartFromKey(); });
+document.getElementById('resumeBtn').addEventListener('click', (e) => { e.currentTarget.blur(); closePause(); });
+document.getElementById('pauseRestart').addEventListener('click', (e) => { e.currentTarget.blur(); restartFromKey(); });
+document.getElementById('continueBtn').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  started = true;
+  startEl.classList.add('hidden');
+  loadLevel(progress.unlocked || 1, 0);
+  armOverlayLock();
+});
 canvas.addEventListener('pointerdown', onDown);
 canvas.addEventListener('pointermove', onMove);
-canvas.addEventListener('pointerup', onUp);
-canvas.addEventListener('pointercancel', () => { hold = null; });
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', (e) => {
+  if (hold && (!e || e.pointerId === hold.id)) {
+    hold = null;
+    previewColor = null;
+  }
+});
+function toggleMute() {
+  muted = !muted;
+  progress.mute = muted;
+  saveProgress();
+  const btn = document.getElementById('muteBtn');
+  btn.textContent = muted ? 'Muted' : 'Sound';
+  btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+}
+
+function toggleCalm() {
+  calm = !calm;
+  progress.calm = calm;
+  saveProgress();
+  const btn = document.getElementById('calmBtn');
+  btn.textContent = calm ? 'Calm on' : 'Calm off';
+  btn.setAttribute('aria-pressed', calm ? 'true' : 'false');
+  if (calm) marching = false;
+}
+
+function refreshContinue() {
+  document.getElementById('continueBtn').classList.toggle('hidden', !(progress.unlocked > 1));
+}
+
+function openPause() {
+  if (!started || !startEl.classList.contains('hidden')) return;
+  if (!overEl.classList.contains('hidden') || !winEl.classList.contains('hidden')) return;
+  paused = true;
+  pauseEl.classList.remove('hidden');
+  document.getElementById('resumeBtn').focus({ preventScroll: true });
+}
+
+function closePause() {
+  pauseEl.classList.add('hidden');
+  paused = false;
+  armOverlayLock();
+}
+
+function restartFromKey() {
+  if (!started) return;
+  pauseEl.classList.add('hidden');
+  paused = false;
+  overEl.classList.add('hidden');
+  winEl.classList.add('hidden');
+  restartLevel();
+}
+
+function overlayReady() {
+  return performance.now() >= overlayLiveAt;
+}
+
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') {
+    e.preventDefault();
+    toggleMute();
+    return;
+  }
+  if (e.key === 'Backspace') {
+    e.preventDefault();
+    restartFromKey();
+    return;
+  }
   if (!helpEl.classList.contains('hidden')) {
     if (e.key === 'Escape') {
       e.preventDefault();
       helpEl.classList.add('hidden');
+      armOverlayLock();
     }
     return;
   }
@@ -707,7 +881,23 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  if (!overEl.classList.contains('hidden') || !winEl.classList.contains('hidden')) return;
+  if (!winEl.classList.contains('hidden')) {
+    if (e.key === 'Enter' && overlayReady()) {
+      e.preventDefault();
+      const again = document.getElementById('againBtn');
+      const next = document.getElementById('nextBtn');
+      (again.classList.contains('hidden') ? next : again).click();
+    }
+    return;
+  }
+  if (!overEl.classList.contains('hidden')) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (!pauseEl.classList.contains('hidden')) closePause();
+    else openPause();
+    return;
+  }
+  if (!pauseEl.classList.contains('hidden')) return;
   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Enter'].includes(e.key)) e.preventDefault();
   if (e.repeat) return;
   audio();
@@ -718,7 +908,7 @@ window.addEventListener('keydown', (e) => {
     const max = sel.kind === 'deck' ? deck.length - 1 : 4;
     sel.index = Math.min(max, sel.index + 1);
   }
-  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') sel = { kind: 'bench', index: Math.min(sel.index, 4) };
+  if (e.key === 'ArrowUp') sel = { kind: 'bench', index: Math.min(sel.index, 4) };
   if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') sel = { kind: 'deck', index: Math.min(sel.index, deck.length - 1) };
   if (e.key === 'Enter' || e.key === ' ') launch(sel.kind, sel.index);
   if (['1', '2', '3', '4'].includes(e.key)) launch('deck', Number(e.key) - 1);
@@ -727,7 +917,21 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('resize', resize);
 resize();
+calm = Boolean(progress.calm);
+muted = Boolean(progress.mute);
+document.getElementById('muteBtn').textContent = muted ? 'Muted' : 'Sound';
+document.getElementById('muteBtn').setAttribute('aria-pressed', muted ? 'true' : 'false');
+document.getElementById('calmBtn').textContent = calm ? 'Calm on' : 'Calm off';
+document.getElementById('calmBtn').setAttribute('aria-pressed', calm ? 'true' : 'false');
+refreshContinue();
 freshBoard(0);
+function phaseName() {
+  if (!overEl.classList.contains('hidden')) return 'over';
+  if (!winEl.classList.contains('hidden')) return 'win';
+  if (!pauseEl.classList.contains('hidden')) return 'pause';
+  if (!startEl.classList.contains('hidden')) return 'start';
+  return 'play';
+}
 window.__game = {
   get: () => ({
     level: levelNum,
@@ -737,10 +941,48 @@ window.__game = {
     rail: rail.length,
     bench: bench.filter(Boolean).length,
     deck: deck.map((col) => col.map((gunner) => gunner.color + gunner.ammo)),
-    phase: overEl.classList.contains('hidden') ? (winEl.classList.contains('hidden') ? 'play' : 'win') : 'over',
+    phase: phaseName(),
     started,
+    muted,
+    calm,
+    paused,
+    marching,
+    title: document.getElementById('overTitle').textContent,
   }),
   launch(index) { launch('deck', index); },
   bench(index) { launch('bench', index); },
+  loadLevel(n) {
+    started = true;
+    startEl.classList.add('hidden');
+    loadLevel(n, 0);
+  },
+  boxes() {
+    geom = layout();
+    return { grid: geom.grid, rail: geom.rail, bench: geom.benchBox, deck: geom.deckBox };
+  },
+  benchPoints() {
+    geom = layout();
+    const rect = canvas.getBoundingClientRect();
+    return geom.benchSlots.map((slot) => ({
+      x: rect.left + (slot.x / W) * rect.width,
+      y: rect.top + (slot.y / H) * rect.height,
+    }));
+  },
+  clientTargets() {
+    geom = layout();
+    const rect = canvas.getBoundingClientRect();
+    return targets.map((target) => ({
+      kind: target.kind,
+      index: target.index,
+      x: rect.left + (target.x / W) * rect.width,
+      y: rect.top + (target.y / H) * rect.height,
+    }));
+  },
+  presentClear() {
+    started = true;
+    startEl.classList.add('hidden');
+    cells = [];
+    showWin();
+  },
 };
 requestAnimationFrame(frame);

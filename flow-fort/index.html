@@ -19,10 +19,14 @@
   }
   #stage {
     position: relative;
-    width: min(100vw, 1080px, calc(100dvh * 1.05));
+    width: min(100vw, 430px);
     height: 100dvh;
     background: #141a2e;
     overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.04);
+  }
+  @media (max-height: 520px) and (orientation: landscape) {
+    #stage { width: 100vw; height: 100dvh; }
   }
   canvas { width: 100%; height: 100%; display: block; touch-action: none; }
   .overlay {
@@ -31,11 +35,12 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
+    justify-content: flex-start;
+    gap: 12px;
     background: rgba(10, 14, 26, .5);
     text-align: center;
-    padding: 24px;
+    padding: 22px 16px 16px;
+    z-index: 4;
   }
   .overlay.hidden { display: none; }
   h1 {
@@ -69,6 +74,19 @@
   }
   button.secondary:active { transform: none; box-shadow: none; background: rgba(255,255,255,.1); }
   button.hidden { display: none; }
+  button.hud {
+    position: absolute;
+    z-index: 3;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+    font-size: 14px;
+    box-shadow: none;
+  }
+  #muteBtn { top: 8px; right: 8px; }
+  #pauseBtn { top: 8px; left: 8px; }
+  #restartBtn { top: 8px; left: 50%; transform: translateX(-50%); }
+  .stars { letter-spacing: .18em; color: #ffd56a; font-size: 28px; }
   #over button, #win button {
     width: min(420px, 100%);
     padding: 14px 28px;
@@ -95,19 +113,25 @@
 <body>
   <div id="stage">
     <canvas id="c"></canvas>
+    <button type="button" id="pauseBtn" class="secondary hud">Pause</button>
+    <button type="button" id="restartBtn" class="secondary hud">Restart</button>
+    <button type="button" id="muteBtn" class="secondary hud" aria-pressed="false">Sound</button>
     <div id="start" class="overlay">
       <h1>FLOW FORT</h1>
+      <p>Send the right color before the horde reaches the wall.</p>
+      <button type="button" id="continueBtn" class="hidden">Continue</button>
       <button type="button" id="startBtn">Start</button>
+      <button type="button" class="secondary" id="calmBtn" aria-pressed="false">Calm off</button>
       <button type="button" class="secondary" id="helpBtn">How to play</button>
     </div>
     <div id="help" class="overlay help hidden">
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
         <h2 id="helpTitle">How to play</h2>
         <p><strong>Goal.</strong> Clear every colored block before the horde marches into the fort wall.</p>
-        <p><strong>Gunners.</strong> Tap the front gunner in a column to send it clockwise around the rail. It shoots only the first block in a lane, and only when that block matches its color. The number on it is how many shots it has. Arrow keys pick a gunner. Enter or Space sends it. Keys 1–3 send the columns.</p>
-        <p><strong>Bench.</strong> If it still has shots after a full lap, it waits in a slot above the deck. Tap it, or press Q W E R T, to send it again. Five slots. A sixth leftover jams and costs a heart. Only four gunners can ride the rail at once.</p>
-        <p><strong>The horde.</strong> The blocks step down on a timer. A row that hits the wall is destroyed and costs a heart. You also lose if you run out of gunners with blocks still standing.</p>
-        <p><strong>Score.</strong> 10 points for each block shot, plus a bonus for hearts and empty bench slots when the level clears.</p>
+        <p><strong>Gunners.</strong> Tap the front gunner in a column to send it clockwise around the rail. It shoots only the first block in a lane, and only when that block matches its color. Purple gunners never match a block: they only fill the bench. Keys 1–4 send columns. Q W E R T send the five bench slots. R still launches a bench slot.</p>
+        <p><strong>Bench.</strong> Leftover ammo waits in a slot. Five slots. A sixth leftover jams and costs a heart. Restart is the on-screen Restart button or Backspace, not R.</p>
+        <p><strong>The horde.</strong> Blocks step toward the wall. A row that hits the wall costs a heart and is thrown back to the top, so letting it through never clears the level. Calm mode, on the title screen, stops the march. Esc pauses. M mutes.</p>
+        <p><strong>Score.</strong> 10 points for each block shot, plus a bonus for hearts and empty bench slots. Three stars means a clear with every heart and no jam. Calm caps stars at two.</p>
         <button type="button" id="helpClose">Close</button>
       </div>
     </div>
@@ -119,10 +143,17 @@
     </div>
     <div id="win" class="overlay hidden">
       <h1 id="winTitle">CLEARED</h1>
+      <p id="winStars" class="stars">★★★</p>
       <p id="winScore">0</p>
       <button type="button" id="nextBtn">Next</button>
-      <button type="button" id="replayBtn">Replay</button>
+      <button type="button" id="replayBtn" class="secondary">Replay</button>
       <button type="button" id="againBtn" class="hidden">Play again</button>
+    </div>
+    <div id="pause" class="overlay hidden">
+      <h1>PAUSED</h1>
+      <p>The march is frozen.</p>
+      <button type="button" id="resumeBtn">Resume</button>
+      <button type="button" class="secondary" id="pauseRestart">Restart level</button>
     </div>
   </div>
   <script src="logic.js"></script>

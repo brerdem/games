@@ -1,38 +1,58 @@
 # Flow Fort — build notes
 
-MVP of the 2026-10-19 Flow Fort brief. Static canvas game in this folder. No build step.
+## Concept
 
-## What was built
+- Game ID: `flow-fort`
+- Brief: 2026-10-19 brief 1 (FLOW FORT), copied to `BRIEF.md`
+- Summary: color-matched gunners ride a clockwise rail around a fort. A shot lands only on the first block in that lane when the colors match. Leftover ammo parks on a five-slot bench. The horde steps toward the wall unless Calm is on.
 
-- Three levels. A color formation sits in the fort grid and steps toward the wall. Gunners ride a clockwise rail around it.
-- A gunner fires only when the first occupied cell in the lane it is crossing matches its color. One shot per lane per lap. Ammo drops by 1. At 0 it pops and frees a rail spot.
-- Leftover ammo at the end of a lap parks in one of five bench slots. A full bench jams and costs a heart. The rail holds at most four gunners.
-- The horde steps down on a timer. A row that reaches the wall is removed and costs a heart. You also lose if the deck, bench, and rail are empty while blocks remain.
-- Level 1 is two colors and slow. Level 2 hides a blue block inside a red and yellow shell. Level 3 is a green shell with red inside and one yellow center. Ammo for each color matches the number of blocks. A greedy player that always sends the gunner with the most open lanes clears every level.
-- Score is 10 per block, plus 100 for each heart left and 50 for each empty bench slot on a clear.
-- Start screen, How to play, lose screen with Restart This Level and Restart, win screen with Next or Play again and Replay.
+## Implementation
 
-## Cut or simplified
+- Tech: `index.html`, `logic.js`, `game.js`. Classic scripts, system fonts, no build and no network assets. Rules and the headless simulator live in `logic.js`.
+- Mechanics: one shot per lane per lap. Ammo 0 pops the gunner off the rail. A full bench jams and costs a heart. The rail cap is 3 on L1, 2 on L2, and 1 after that, so sending the wrong gunner blocks the loop. A row that reaches the wall costs a heart and is thrown back to the top, so a breach cannot clear the level. Purple gunners match nothing; they only occupy the bench.
+- Loop: 8 levels. L1–L2 are short and safe. L3–L7 are layered shells with the needed color behind a decoy column. L8 keeps one inner color split into single-shot gunners so a bad order can jam that ammo away. Stars: 3 with 3 hearts and no jam, 2 with at least 2 hearts, 1 otherwise. Calm caps stars at 2. Progress is `localStorage` key `flow-fort-progress-v1` (unlocked level, stars, mute, calm).
+- Controls: tap a deck front or a bench gunner. Keys 1–4 launch columns. Q W E R T launch bench slots, so R still launches. Restart is the on-screen Restart button or Backspace. M mutes, with a Sound button. Esc pauses and freezes the march. Calm is a title-screen toggle.
+- Animation and visuals: the existing slate fort, chevron rail, gunner pips, hold-to-preview, breach flash, and jam shake stay. Landscape puts the bench and deck in a column to the right of the rail.
+- Physics: none. The rail is a timed lap of 6.4 seconds.
 
-- The 15-level ladder, armored cells, bombs, 2×2 bosses, endless mode, coin shop, stars, calm mode, and localStorage.
-- No level map, mute button, hint key, or 2× fast-forward.
-- Hold-to-preview draws the open lanes for the gunner you are holding. It is not on by default.
-- The placeholder "continue +1 heart" button is not included.
+## Scope
 
-## Controls
+- Done: FF-001, FF-002, FF-003, FF-005, FF-011, and the rest of the shared shell on this game (mute, pause, save, outside release, restart on a key that is not R).
+- Simplified: 8 levels rather than the brief's 15. No armored cells, bombs, bosses, endless mode, or coin shop. Those were called out as later work once the bench and the clock had stakes.
+- Deferred: gunner spacing on the spawn point (FF-008). W still launches bench slot 2, because that key is part of Q W E R T.
+- Limitations: L8 is where OUT OF GUNNERS shows up, and random play often still clears it. The pooled lazy-random loss rate stays just over half because L3–L7 lose every sampled run.
 
-- Tap the front gunner of a column, or a gunner waiting on the bench.
-- Arrow keys move the selection. Enter or Space sends it. 1–3 send columns. Q W E R T send bench slots.
-- Hold a gunner to see which lanes it can shoot right now.
+## Design decisions
 
-## Deviations
+- Depth comes from order and the bench, not a faster rail. The lap time is still 6.4 seconds. Later levels allow only one gunner on the rail, and the column in front of the player is full of purple decoys or inner-color shots that cannot fire yet.
+- A breach respawns that row at the top. Deleting the row was letting the last blocks "clear" the level by walking into the wall.
+- Careful time in the tests is the greedy policy with a 0.8 second gap between launches. One-second and 1.5-second greedy runs use the same policy with a longer gap. Calm greedy never marches.
+- Spam is `spamLeftmostDeckOnly`: only deck column 0, never the bench. Random picks any current front.
 
-- Fredoka from Google Fonts, with Trebuchet MS / Segoe UI as fallback.
-- The board fills the shared wide stage (up to about 1080px) instead of a fixed 720×1280 letterbox. The grid is 8×8 or 9×9, sized to the picture, not 12×14.
-- Level 1's march starts on the first launch, so the opening board does not walk into the wall while you are still reading it.
+## Testing
 
-## Ideas for the full version
+| AC | Result | Evidence |
+| --- | --- | --- |
+| 0.1 Enter after a win | PASS | `mute, pause, restart, and saved progress` presses Enter and lands on level 2 |
+| 0.2 Help sheet at the top | PASS | Already wired: `focus({preventScroll:true})` and `scrollTop = 0` |
+| 0.3 Classic script, file:// | PASS | `file:// has no http requests` |
+| 0.4 Mute, pause, save. R kept as launch | PASS | Same browser test. M and the Sound button mute. Esc pauses. Stars and unlock survive reload. Restart is Backspace and the Restart button. R still launches bench slot 4 |
+| 0.5 Overlay lock | PASS | `core gesture, landscape separation, and next stays off the bench` clicks Next immediately and the level does not change |
+| 0.6 Release outside the canvas | PASS | `outside release does not launch` (mouseup at (5,5), rail stays empty) |
+| 0.7 CI | PASS | `.github/workflows/ci.yml` job `flow-fort` runs `flow-fort/tests/logic.test.mjs` and `flow-fort/tests/browser.test.mjs` |
+| FF-001 Lazy loss, greedy, both rare lose states | PASS | `lazy strategies lose on L3+ and greedy holds the timed line`. Spam 6/6 on L3+. Random 86/170 losses (L3–L7 are 16/16 each; L8 is 6/90). Greedy calm 8/8. Greedy at 1 second 8/8. JAMMED 13 runs, OUT OF GUNNERS 3 runs |
+| FF-002 Time pressure and calm | PASS | Median careful clear on L3+ is 81.0 seconds (greedy, 0.8 second reaction). Greedy at 1.5 seconds loses at least one heart on 3/4 of L5–L8 and wins L1 and L2 with 3 hearts. Calm toggle is on the title screen |
+| FF-003 Breach is not a clear | PASS | `breach frame never clears the level`. The scripted shell leaves the blue block in play and costs a heart |
+| FF-005 Landscape bench/board overlap | PASS | `core gesture...` asserts grid/rail do not overlap bench/deck on all 8 viewports, including 844×390 and 932×430 |
+| FF-011 Next over the bench | PASS | At 844×390, `elementFromPoint` on every bench slot is not `#nextBtn`. A click in the first 300 ms does not advance |
 
-- The rest of the 15 pictures, including armored cells, bombs, and bosses.
-- The deck generator, endless waves, and the four-upgrade shop.
-- Saved stars, coins, and calm mode.
+Commands: `node --test --test-timeout=180000 flow-fort/tests/logic.test.mjs flow-fort/tests/browser.test.mjs`
+
+Unverified: a physical phone, and whether an 81 second careful clear feels tense or tedious. The times are from the headless simulator, which uses the same lap, shot, park, jam, and march rules as the page.
+
+## Delivery
+
+- URL: https://brerdem.github.io/games/flow-fort/
+- Commit: the `main` commit that adds this rebuild
+- Build: GitHub Actions workflow `ci`, job `flow-fort`, plus the existing Pages workflow
+- Game Tester: ready for a round-1 retest of Flow Fort. Other games were not changed except the shared CI workflow, which gained a `flow-fort` job.
