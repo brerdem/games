@@ -53,6 +53,6 @@ Unverified: a real finger on the lathe, and whether a 12 s fight feels like the 
 ## Delivery
 
 - URL: https://brerdem.github.io/games/top-turner/
-- Commit: the `main` commit that adds this rebuild
+- Commit: `4078b9c` on `main`
 - Build: GitHub Actions workflow `ci`, job `top-turner`, plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Top Turner. Other game folders were not changed. The shared CI workflow gained a `top-turner` job.
