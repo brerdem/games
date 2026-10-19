@@ -61,3 +61,7 @@ Unverified: a physical phone, Safari file://, and a second machine's 4× throttl
 - Commit: `db07643` on `main` (this notes tweak may sit one commit later)
 - Build: GitHub Actions workflow `ci` (job `ring-out`) plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Ring Out against this table. Flow Fort and Top Turner only changed shell packaging, win focus, help scroll, and the post-overlay input lock.
+
+## Layout
+
+On a desktop window the play area is a centred portrait frame about 390×844 (9:19.5), letterboxed on the page background, and the game world is not stretched sideways. A phone fills the screen at its own shape, including 360×800 and 430×932. The canvas backing store uses the same scale on both axes.

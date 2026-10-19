@@ -56,3 +56,7 @@ Unverified: a real finger on the lathe, and whether a 12 s fight feels like the 
 - Commit: `4078b9c` on `main`
 - Build: GitHub Actions workflow `ci`, job `top-turner`, plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Top Turner. Other game folders were not changed. The shared CI workflow gained a `top-turner` job.
+
+## Layout
+
+On a desktop window the play area is a centred portrait frame about 390×844 (9:19.5), letterboxed on the page background, and the game world is not stretched sideways. A phone fills the screen at its own shape, including 360×800 and 430×932. The canvas backing store uses the same scale on both axes.

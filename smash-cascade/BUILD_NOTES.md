@@ -41,3 +41,7 @@ Checked in a fixed 540×960 world. Results move a little because pegs add a smal
 - The rest of the 12 handcrafted towers and the endless generator.
 - The four upgrades and the coin shop between levels.
 - Heavier stacking, moving shelves, and special cannonballs.
+
+## Layout
+
+On a desktop window the play area is a centred portrait frame about 390×844 (9:19.5), letterboxed on the page background, and the game world is not stretched sideways. A phone fills the screen at its own shape, including 360×800 and 430×932. The canvas backing store uses the same scale on both axes.

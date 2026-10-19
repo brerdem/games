@@ -248,10 +248,13 @@ test('core gesture and hit band on eight viewports', async () => {
   try {
     for (const [width, height] of VIEWPORTS) {
       const { page, errors } = await open(browser, width, height);
-      const stage = await page.$eval('#stage', (el) => el.getBoundingClientRect().width);
-      const landscapePhone = width > height && height <= 520;
-      if (landscapePhone) assert.ok(stage >= width - 2, `landscape stage ${stage}`);
-      else assert.ok(stage <= 431, `phone column ${stage} at ${width}x${height}`);
+      const stage = await page.$eval('#stage', (el) => {
+        const box = el.getBoundingClientRect();
+        return { w: box.width, h: box.height };
+      });
+      const phone = width <= 520 || height <= 520;
+      if (phone) assert.ok(Math.abs(stage.w - width) <= 2, `phone stage ${stage.w} at ${width}x${height}`);
+      else assert.ok(Math.abs(stage.w / stage.h - 390 / 844) < 0.03, `desktop aspect ${stage.w}x${stage.h}`);
       await page.click('#startBtn');
       await page.waitForTimeout(400);
       const before = await page.evaluate(() => window.__game.get());

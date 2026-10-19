@@ -56,3 +56,7 @@ Unverified: a physical phone, and whether an 81 second careful clear feels tense
 - Commit: `1da12a0` on `main`
 - Build: GitHub Actions workflow `ci`, job `flow-fort`, plus the existing Pages workflow
 - Game Tester: ready for a round-1 retest of Flow Fort. Other games were not changed except the shared CI workflow, which gained a `flow-fort` job.
+
+## Layout
+
+On a desktop window the play area is a centred portrait frame about 390×844 (9:19.5), letterboxed on the page background, and the game world is not stretched sideways. A phone fills the screen at its own shape, including 360×800 and 430×932. The canvas backing store uses the same scale on both axes.

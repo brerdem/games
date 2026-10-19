@@ -33,3 +33,7 @@ MVP of the 2026-10-19 Sand Strata brief. Static canvas game in this folder. No b
 - Pegs, pull-pins, wet sand, and the other bottle shapes from the brief.
 - Undo for the last pour, a shelf of 15 bottles, and the endless generator.
 - Saved best scores and the wider-nozzle upgrade.
+
+## Layout
+
+On a desktop window the play area is a centred portrait frame about 390×844 (9:19.5), letterboxed on the page background, and the game world is not stretched sideways. A phone fills the screen at its own shape, including 360×800 and 430×932. The canvas backing store uses the same scale on both axes.
