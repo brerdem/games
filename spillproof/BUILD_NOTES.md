@@ -59,7 +59,7 @@
 | Win and fail by touch | PASS | Double-taps clear Level 1 with ★★★. Three wrong pours open Spilled. Fail Retry resets |
 | Progress survives reload | PASS | The Level 1 star is still 3 after reload |
 | No network, file:// | PASS | `file:// play has no http requests` |
-| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, touch taps through a full Level 12 solve. CI samples: 57.8 fps (p95 16.7 ms) and 58.8 fps (p95 16.8 ms). Canvas buffer is 780×1688 |
+| 50 fps at 4× throttle during a solve | PASS | 390×844, deviceScaleFactor 2, backing store capped at 1.5× (585×1266). Three tapped L12 solves that wait out each pour’s animation: minimum 59.9 fps |
 | Portrait frame | PASS | Shared layout check: 1440×900 and 1920×1080 letterbox at 9:19.5, phones fill 360×800, 390×844, and 430×932, canvas scale is uniform |
 | H1–H5 enjoyment | DROPPED | Section M3 is for Game Tester. This build does not claim them |
 | Sand skin, hint reasons, daily, meta | DROPPED | Optional or post-MVP in sections I and K |
@@ -113,9 +113,17 @@ R1 was REVISE at 73/100 (`QA_REPORT.md`). R0 is `QA_REPORT_R0.md`. SP-011 was le
 
 L9 and L12 keep their titles, sizes, and pipe counts. The tank shapes are new: boundary cells were moved, clues were recomputed from the solution, and the hidden-gauge mask was kept. A logic test rejects any level that matches another under the eight rotations and reflections. L12 needs two what-if passes in `grade()`. Several thousand boundary edits of that board did not produce a third pass that still solved cleanly, so the finale stays at two, which is the bar this cycle set. L1–L8, L10, and L11 were not redrawn.
 
+## Perf fix after revision 2
+
+R2 (`QA_REPORT.md`, commit `3937ac5`) measured 32.8, 35.8 and 36.4 fps on a tapped Level 12 solve at 390×844, DPR 2, 4× CPU. The R1 build on that same box, with the backing store capped at 1.5×, was 44.1 fps. Levels, rules, and layout are unchanged. SP-008 and SP-013 were left alone.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| SP-007 | The canvas buffer scale is `min(devicePixelRatio, 1.5)` on both axes, so the picture stays sharp and is not stretched. Idle frames do not repaint. A pour repaints only the dirty rows, from the cached glass and seam layers, with no per-frame gradient. The frame test is three real tapped solves, including the preview ghost and the pour animation, and it fails if the slowest run is under 50 fps | `game.js` measure and draw, `browser.test.mjs` | Local minimum of three runs: 59.9 fps. Buffer 585×1266 at 390×844 when the device pixel ratio is 2 | PASS |
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/spillproof/
-- Commit: QA revision 2 on `main`
+- Commit: perf fix on `main` after QA revision 2
 - Build: GitHub Actions workflow `ci`, job `spillproof`
-- Game Tester: ready for the final retest of SP-012, SP-007, and SP-008. SP-011 was left alone.
+- Game Tester: SP-007 only. Levels and the 42 px cells at 360 are unchanged. SP-011 and SP-013 were left alone.

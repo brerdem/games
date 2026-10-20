@@ -283,7 +283,8 @@ function measure() {
   const rect = stage.getBoundingClientRect();
   W = Math.max(1, rect.width);
   H = Math.max(1, rect.height);
-  dpr = window.devicePixelRatio || 1;
+  const rawDpr = window.devicePixelRatio || 1;
+  dpr = rawDpr > 1.5 ? 1.5 : rawDpr;
   canvas.width = Math.max(1, Math.round(W * dpr));
   canvas.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -453,13 +454,14 @@ function schedule(delay, fn) { later.push({ at: nowMs() + delay, fn: fn }); }
 
 function visualOf(letter, now) {
   let value = shown[letter];
-  tweens.forEach(function (tw) {
-    if (tw.letter !== letter) return;
+  for (let i = 0; i < tweens.length; i++) {
+    const tw = tweens[i];
+    if (tw.letter !== letter) continue;
     const u = (now - tw.start - tw.delay) / tw.dur;
     if (u <= 0) value = tw.from;
     else if (u >= 1) value = tw.to;
     else value = tw.from + (tw.to - tw.from) * easeOutBack(clamp(u, 0, 1));
-  });
+  }
   return value;
 }
 
@@ -1004,24 +1006,34 @@ function paintCellBody(r, c, box, now) {
   }
 }
 
-function repaintIndex(idx, now) {
+function repaintDirty(now) {
   const cols = model.C;
-  const r = (idx / cols) | 0;
-  const c = idx - r * cols;
-  const box = setBox(r, c);
-  blit(bakeBack, box.x, box.y, box.w, box.h);
-  paintCellBody(r, c, box, now);
-  blit(bakeLines, box.x, box.y, box.w, box.h);
-  if (model.clue.ducks.length && hasDuck(r, c)) {
-    const bob = reduce ? 0 : Math.sin(now / 280 + c) * 1.4;
-    duckSprite(box.x + box.w * 0.62, box.y + 4 + bob, layout.cell * 0.42);
-  }
-}
-
-function hasDuck(r, c) {
+  const rows = model.R;
+  const cell = layout.cell;
   const ducks = model.clue.ducks;
-  for (let i = 0; i < ducks.length; i++) if (ducks[i][0] === r && ducks[i][1] === c) return true;
-  return false;
+  for (let r = 0; r < rows; r++) {
+    let c = 0;
+    while (c < cols) {
+      if (!dirty[r * cols + c]) { c++; continue; }
+      const start = c;
+      c++;
+      while (c < cols && dirty[r * cols + c]) c++;
+      const x = layout.originX + start * cell;
+      const y = layout.originY + r * cell;
+      const w = (c - start) * cell;
+      blit(bakeBack, x, y, w, cell);
+      for (let cc = start; cc < c; cc++) paintCellBody(r, cc, setBox(r, cc), now);
+      blit(bakeLines, x, y, w, cell);
+      if (ducks.length) {
+        for (let i = 0; i < ducks.length; i++) {
+          if (ducks[i][0] !== r || ducks[i][1] < start || ducks[i][1] >= c) continue;
+          const box = setBox(r, ducks[i][1]);
+          const bob = reduce ? 0 : Math.sin(now / 280 + ducks[i][1]) * 1.4;
+          duckSprite(box.x + box.w * 0.62, box.y + 4 + bob, cell * 0.42);
+        }
+      }
+    }
+  }
 }
 
 function paintFull(now) {
@@ -1129,6 +1141,30 @@ function draw(now) {
     return;
   }
 
+  let fxLeft = false;
+  for (let i = 0; i < fxPrev.length; i++) if (fxPrev[i]) { fxLeft = true; break; }
+  const laserOn = !!(laser && now >= laser.start && now <= laser.start + laser.dur);
+  const beadOn = !!(bead && now >= bead.start && now <= bead.start + bead.dur);
+  let sloshing = false;
+  for (let t = 0; t < tankLetter.length; t++) {
+    const s = slosh[tankLetter[t]];
+    if (s.x !== 0 || s.v !== 0) { sloshing = true; break; }
+  }
+  const pr = preview ? preview.r : -1;
+  const pc = preview ? preview.c : -1;
+  const pg = preview ? preview.g : -1;
+  const samePreview = shownPreview ? (shownPreview.r === pr && shownPreview.c === pc && shownPreview.g === pg) : pr < 0;
+  const duckPhaseNow = model.clue.ducks.length && !reduce ? Math.floor(now / 90) : duckPhase;
+  const cursorMoved = keysOn ? (cursor.r * model.C + cursor.c !== cursorIdx) : cursorIdx >= 0;
+  const quiet = !tweens.length && !bubbles.length && !pulse && !laserOn && !beadOn && !sloshing && !fxLeft && samePreview && duckPhaseNow === duckPhase && !cursorMoved;
+  if (quiet) {
+    refreshGauges(now);
+    syncBubble();
+    profile.frames++;
+    profile.total += performance.now() - tDraw;
+    return;
+  }
+
   dirty.fill(0);
   fxMask.fill(0);
   for (let i = 0; i < fxPrev.length; i++) if (fxPrev[i]) dirty[i] = 1;
@@ -1140,12 +1176,10 @@ function draw(now) {
       paintedShown[t] = visual;
     }
   }
-  const nextPreview = preview ? { r: preview.r, c: preview.c, g: preview.g, row: preview.row } : null;
-  const samePreview = (!shownPreview && !nextPreview) || (shownPreview && nextPreview && shownPreview.r === nextPreview.r && shownPreview.c === nextPreview.c && shownPreview.g === nextPreview.g);
   if (!samePreview) {
     markGhost(shownPreview);
-    markGhost(nextPreview);
-    shownPreview = nextPreview;
+    markGhost(preview);
+    shownPreview = pr < 0 ? null : { r: pr, c: pc, g: pg, row: preview.row };
   }
   if (keysOn) {
     const idx = cursor.r * model.C + cursor.c;
@@ -1189,19 +1223,7 @@ function draw(now) {
   let nDirty = 0;
   for (let i = 0; i < dirty.length; i++) if (dirty[i]) nDirty++;
   if (nDirty) {
-    if (nDirty > 28) {
-      const x = layout.originX;
-      const y = layout.originY;
-      const bw = layout.cols * layout.cell;
-      const bh = layout.rows * layout.cell;
-      blit(bakeBack, x, y, bw, bh);
-      drawTanks(now);
-      blit(bakeLines, x, y, bw, bh);
-      drawDucks(now);
-      for (let t = 0; t < tankLetter.length; t++) paintedShown[t] = shown[tankLetter[t]] + sloshAmt(t);
-    } else {
-      for (let i = 0; i < dirty.length; i++) if (dirty[i]) repaintIndex(i, now);
-    }
+    repaintDirty(now);
     ctx.globalAlpha = 1;
     for (let i = 0; i < bubbles.length; i++) {
       const bub = bubbles[i];
@@ -1347,15 +1369,18 @@ function drawLaser(now) {
   if (!laser || reduce || now < laser.start || now > laser.start + laser.dur) return;
   const u = (now - laser.start) / laser.dur;
   const y = layout.originY + laser.row * layout.cell;
-  ctx.strokeStyle = 'rgba(180, 255, 244,' + (0.35 * (1 - u)) + ')';
+  ctx.strokeStyle = '#B4FFF4';
+  ctx.globalAlpha = 0.35 * (1 - u);
   ctx.lineWidth = 6;
   ctx.beginPath();
   ctx.moveTo(layout.originX, y);
   ctx.lineTo(layout.originX + layout.cols * layout.cell, y);
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(233,255,248,' + (1 - u) + ')';
+  ctx.strokeStyle = '#E9FFF8';
+  ctx.globalAlpha = 1 - u;
   ctx.lineWidth = 2;
   ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function wetFraction(row, visual) {
@@ -1551,14 +1576,17 @@ function drawPipes(now) {
   });
 }
 
+const beadPoint = { x: 0, y: 0 };
 function drawBead(now) {
   if (!bead || now < bead.start || now > bead.start + bead.dur) return;
   const u = (now - bead.start) / bead.dur;
   const point = pointAlong(bead.path, u);
-  ctx.fillStyle = 'rgba(200, 255, 244, 0.45)';
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = '#C8FFF4';
   ctx.beginPath();
   ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
   ctx.fill();
+  ctx.globalAlpha = 1;
   ctx.fillStyle = '#F7FFF8';
   ctx.beginPath();
   ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
@@ -1566,25 +1594,23 @@ function drawBead(now) {
 }
 
 function pointAlong(path, u) {
-  const seg = [];
   let total = 0;
-  for (let i = 1; i < path.length; i++) {
-    const len = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
-    seg.push(len);
-    total += len;
-  }
+  const lens = path.length;
+  for (let i = 1; i < lens; i++) total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
   let dist = total * u;
-  for (let i = 1; i < path.length; i++) {
-    if (dist <= seg[i - 1] || i === path.length - 1) {
-      const f = seg[i - 1] ? dist / seg[i - 1] : 0;
-      return {
-        x: path[i - 1].x + (path[i].x - path[i - 1].x) * f,
-        y: path[i - 1].y + (path[i].y - path[i - 1].y) * f,
-      };
+  for (let i = 1; i < lens; i++) {
+    const len = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+    if (dist <= len || i === lens - 1) {
+      const f = len ? dist / len : 0;
+      beadPoint.x = path[i - 1].x + (path[i].x - path[i - 1].x) * f;
+      beadPoint.y = path[i - 1].y + (path[i].y - path[i - 1].y) * f;
+      return beadPoint;
     }
-    dist -= seg[i - 1];
+    dist -= len;
   }
-  return path[path.length - 1];
+  beadPoint.x = path[lens - 1].x;
+  beadPoint.y = path[lens - 1].y;
+  return beadPoint;
 }
 
 function drawGauges(now) {
@@ -1718,6 +1744,20 @@ function countSpillPixels() {
   return n;
 }
 
+function animating() {
+  if (tweens.length || bubbles.length || pulse) return true;
+  const now = nowMs();
+  if (laser && now <= laser.start + laser.dur) return true;
+  if (bead && now <= bead.start + bead.dur) return true;
+  if (spillFx && now - spillFx.start < 380) return true;
+  if (cracks && now - cracks.start < 720) return true;
+  for (let t = 0; t < tankLetter.length; t++) {
+    const s = slosh[tankLetter[t]];
+    if (s && (s.x !== 0 || s.v !== 0)) return true;
+  }
+  return false;
+}
+
 function solutionTaps() {
   const taps = [];
   for (let g = 0; g < model.P.G; g++) {
@@ -1744,6 +1784,8 @@ window.__spill = {
     return { x: rect.left + box.x + box.w / 2, y: rect.top + box.y + box.h / 2 };
   },
   cellSize: function () { return layout.cell; },
+  animating: animating,
+  bufferScale: function () { return dpr; },
   snapshot: snapshot,
   previewProbe: function (r, c) {
     const before = JSON.stringify(snapshot().committed) + JSON.stringify(snapshot().frost) + snapshot().spills + snapshot().hintsUsed;

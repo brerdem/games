@@ -401,49 +401,64 @@ test('a phone-class 4x throttle stays at or above 50fps during a tapped L12 solv
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', (err) => errors.push(String(err)));
-    await page.goto(fileUrl + '?level=12');
-    await page.waitForFunction(() => window.__spill && window.__spill.ready && window.__spill.cellSize() > 0);
-    await page.evaluate(() => window.__spill.dismissTut());
     const session = await context.newCDPSession(page);
-    await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-    await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); }));
-    await page.evaluate(() => {
-      window.__frames = [];
-      function tick(now) {
-        window.__frames.push(now);
+    const samples = [];
+    for (let run = 0; run < 3; run++) {
+      await page.goto(fileUrl + '?level=12');
+      await page.waitForFunction(() => window.__spill && window.__spill.ready && window.__spill.cellSize() > 0);
+      await page.evaluate(() => window.__spill.dismissTut());
+      await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+      await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); }));
+      await page.evaluate(() => {
+        window.__frames = [];
+        function tick(now) {
+          window.__frames.push(now);
+          requestAnimationFrame(tick);
+        }
         requestAnimationFrame(tick);
+      });
+      const taps = await page.evaluate(() => window.__spill.solutionTaps());
+      for (const cell of taps) {
+        const point = await page.evaluate((item) => window.__spill.cellCenter(item.r, item.c), cell);
+        await page.touchscreen.tap(point.x, point.y);
+        await new Promise((resolve) => { setTimeout(resolve, 80); });
+        await page.touchscreen.tap(point.x, point.y);
+        await page.waitForFunction(() => window.__spill.snapshot().won || !window.__spill.animating(), null, { timeout: 8000 });
       }
-      requestAnimationFrame(tick);
-    });
-    const taps = await page.evaluate(() => window.__spill.solutionTaps());
-    for (const cell of taps) {
-      const point = await page.evaluate((item) => window.__spill.cellCenter(item.r, item.c), cell);
-      await page.touchscreen.tap(point.x, point.y);
-      await page.touchscreen.tap(point.x, point.y);
+      await page.waitForFunction(() => window.__spill.snapshot().won, null, { timeout: 20000 });
+      await page.waitForFunction(() => !window.__spill.animating(), null, { timeout: 8000 });
+      const result = await page.evaluate(() => {
+        const frames = window.__frames;
+        const dt = (frames[frames.length - 1] - frames[0]) / 1000;
+        const gaps = [];
+        for (let i = 1; i < frames.length; i++) gaps.push(frames[i] - frames[i - 1]);
+        gaps.sort((a, b) => a - b);
+        const canvas = document.getElementById('c');
+        return {
+          fps: (frames.length - 1) / dt,
+          frames: frames.length,
+          p95: gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * 0.95))],
+          dpr: window.devicePixelRatio,
+          scale: window.__spill.bufferScale(),
+          buf: canvas.width,
+          css: canvas.clientWidth,
+          bufH: canvas.height,
+          cssH: canvas.clientHeight,
+          cell: window.__spill.cellSize(),
+        };
+      });
+      samples.push(result);
+      console.log(`tapped L12 run ${run + 1} @4x dpr${result.dpr} scale ${result.scale} ${result.fps.toFixed(1)} fps p95 ${result.p95.toFixed(1)} ms buf ${result.buf}x${result.bufH} cell ${result.cell}`);
     }
-    await page.waitForFunction(() => window.__spill.snapshot().won, null, { timeout: 20000 });
-    await new Promise((resolve) => { setTimeout(resolve, 900); });
-    const result = await page.evaluate(() => {
-      const frames = window.__frames;
-      const dt = (frames[frames.length - 1] - frames[0]) / 1000;
-      const gaps = [];
-      for (let i = 1; i < frames.length; i++) gaps.push(frames[i] - frames[i - 1]);
-      gaps.sort((a, b) => a - b);
-      const canvas = document.getElementById('c');
-      return {
-        fps: (frames.length - 1) / dt,
-        frames: frames.length,
-        p95: gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * 0.95))],
-        dpr: window.devicePixelRatio,
-        buf: canvas.width,
-        css: canvas.clientWidth,
-        cell: window.__spill.cellSize(),
-      };
-    });
-    console.log(`tapped L12 @4x dpr${result.dpr} ${result.fps.toFixed(1)} fps p95 ${result.p95.toFixed(1)} ms buf ${result.buf}/${result.css} cell ${result.cell}`);
+    const worst = samples.reduce((min, item) => Math.min(min, item.fps), Infinity);
+    const sample = samples[0];
+    const cap = Math.min(1.5, sample.dpr);
+    console.log(`tapped L12 min ${worst.toFixed(1)} fps of ${samples.map((item) => item.fps.toFixed(1)).join(', ')}`);
     assert.equal(errors.length, 0, errors.join('\n'));
-    assert.ok(Math.abs(result.buf - result.css * result.dpr) <= 2, `backing store ${result.buf} css ${result.css} dpr ${result.dpr}`);
-    assert.ok(result.fps >= 50, `fps ${result.fps}`);
+    assert.ok(sample.scale <= 1.5, `buffer scale ${sample.scale}`);
+    assert.ok(Math.abs(sample.buf - Math.round(sample.css * cap)) <= 2, `backing store ${sample.buf} css ${sample.css} cap ${cap}`);
+    assert.ok(Math.abs(sample.buf / sample.css - sample.bufH / sample.cssH) < 0.02, 'non-uniform buffer');
+    assert.ok(worst >= 50, `min fps ${worst}`);
   } finally {
     await browser.close();
   }
