@@ -152,6 +152,50 @@ test('marks and a refused dry pour leak nothing, and retry is a fresh board', ()
   assert.deepEqual(L.freshState(puzzle), fresh);
 });
 
+test('no level is a copy, mirror, or rotation of another', () => {
+  function rot90(grid) {
+    const rows = grid.length;
+    const cols = grid[0].length;
+    const out = [];
+    for (let c = 0; c < cols; c++) {
+      let row = '';
+      for (let r = rows - 1; r >= 0; r--) row += grid[r][c];
+      out.push(row);
+    }
+    return out;
+  }
+  function flipH(grid) {
+    return grid.map((row) => row.split('').reverse().join(''));
+  }
+  function canon(grid) {
+    const map = {};
+    let n = 0;
+    return grid.map((row) => row.split('').map((ch) => {
+      if (!map[ch]) map[ch] = String.fromCharCode(65 + n++);
+      return map[ch];
+    }).join('')).join('|');
+  }
+  const seen = new Map();
+  L.LEVELS.forEach((level) => {
+    let grid = level.grid.slice();
+    const keys = [];
+    for (let turn = 0; turn < 4; turn++) {
+      keys.push(canon(grid));
+      keys.push(canon(flipH(grid)));
+      grid = rot90(grid);
+    }
+    keys.forEach((key) => {
+      const size = level.size.join('x');
+      const id = size + ':' + key;
+      assert.ok(!seen.has(id), `L${level.level} matches L${seen.get(id)} under mirror or rotation`);
+      seen.set(id, level.level);
+    });
+  });
+  const finale = L.grade(L.models()[11]);
+  assert.equal(finale.tier, 2);
+  assert.ok(finale.rounds >= 2, `L12 what-if rounds ${finale.rounds}`);
+});
+
 test('a hint on every fresh level is a real fact and costs no drop', () => {
   for (const puzzle of L.models()) {
     const fresh = L.freshState(puzzle);

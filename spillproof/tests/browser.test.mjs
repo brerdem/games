@@ -389,7 +389,7 @@ test('a touch pour changes the board and 375-wide cells are at least 44 px', asy
   }
 });
 
-test('a phone-class 4x throttle stays at or above 50fps during a solve', async () => {
+test('a phone-class 4x throttle stays at or above 50fps during a tapped L12 solve', async () => {
   const browser = await launch();
   try {
     const context = await browser.newContext({
@@ -399,24 +399,51 @@ test('a phone-class 4x throttle stays at or above 50fps during a solve', async (
       hasTouch: true,
     });
     const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
     await page.goto(fileUrl + '?level=12');
-    await page.waitForFunction(() => window.__spill && window.__spill.ready);
+    await page.waitForFunction(() => window.__spill && window.__spill.ready && window.__spill.cellSize() > 0);
     await page.evaluate(() => window.__spill.dismissTut());
     const session = await context.newCDPSession(page);
     await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-    const fps = await page.evaluate(() => new Promise((resolve) => {
-      let frames = 0;
-      const start = performance.now();
+    await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); }));
+    await page.evaluate(() => {
+      window.__frames = [];
       function tick(now) {
-        frames += 1;
-        if (frames % 4 === 0) window.__spill.pourNext();
-        if (now - start < 1000) requestAnimationFrame(tick);
-        else resolve(frames / ((now - start) / 1000));
+        window.__frames.push(now);
+        requestAnimationFrame(tick);
       }
       requestAnimationFrame(tick);
-    }));
-    console.log(`fps@4x phone dpr2 solve ${fps.toFixed(1)}`);
-    assert.ok(fps >= 50, `fps ${fps}`);
+    });
+    const taps = await page.evaluate(() => window.__spill.solutionTaps());
+    for (const cell of taps) {
+      const point = await page.evaluate((item) => window.__spill.cellCenter(item.r, item.c), cell);
+      await page.touchscreen.tap(point.x, point.y);
+      await page.touchscreen.tap(point.x, point.y);
+    }
+    await page.waitForFunction(() => window.__spill.snapshot().won, null, { timeout: 20000 });
+    await new Promise((resolve) => { setTimeout(resolve, 900); });
+    const result = await page.evaluate(() => {
+      const frames = window.__frames;
+      const dt = (frames[frames.length - 1] - frames[0]) / 1000;
+      const gaps = [];
+      for (let i = 1; i < frames.length; i++) gaps.push(frames[i] - frames[i - 1]);
+      gaps.sort((a, b) => a - b);
+      const canvas = document.getElementById('c');
+      return {
+        fps: (frames.length - 1) / dt,
+        frames: frames.length,
+        p95: gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * 0.95))],
+        dpr: window.devicePixelRatio,
+        buf: canvas.width,
+        css: canvas.clientWidth,
+        cell: window.__spill.cellSize(),
+      };
+    });
+    console.log(`tapped L12 @4x dpr${result.dpr} ${result.fps.toFixed(1)} fps p95 ${result.p95.toFixed(1)} ms buf ${result.buf}/${result.css} cell ${result.cell}`);
+    assert.equal(errors.length, 0, errors.join('\n'));
+    assert.ok(Math.abs(result.buf - result.css * result.dpr) <= 2, `backing store ${result.buf} css ${result.css} dpr ${result.dpr}`);
+    assert.ok(result.fps >= 50, `fps ${result.fps}`);
   } finally {
     await browser.close();
   }

@@ -8,7 +8,7 @@ const GLYPH = ['●', '▲', '◆'];
 
 const stage = document.getElementById('stage');
 const canvas = document.getElementById('c');
-let ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d', { alpha: false });
 const levelKicker = document.getElementById('level-kicker');
 const levelLabel = document.getElementById('level-label');
 const dropEls = Array.from(document.querySelectorAll('.drop'));
@@ -69,6 +69,20 @@ let bakeBack = null;
 let bakeLines = null;
 let bakeId = '';
 let frostPattern = null;
+let boardReady = false;
+let paintedShown = [];
+let dirty = null;
+let fxMask = null;
+let fxPrev = null;
+let gaugeSig = '';
+let tankCells = [];
+let tankSpan = [];
+let tankLetter = [];
+let cursorIdx = -1;
+let bubbleOn = false;
+let shownPreview = null;
+let stampSeen = '';
+let duckPhase = -1;
 const audioLog = [];
 const events = [];
 let down = null;
@@ -242,6 +256,13 @@ function loadLevel(n) {
   hide(winPanel);
   hide(failPanel);
   hide(confirmPanel);
+  cacheTanks();
+  boardReady = false;
+  gaugeSig = '';
+  shownPreview = null;
+  stampSeen = '';
+  paintedShown = [];
+  duckPhase = -1;
   measure();
   buildPipes();
   syncHud(true);
@@ -262,10 +283,11 @@ function measure() {
   const rect = stage.getBoundingClientRect();
   W = Math.max(1, rect.width);
   H = Math.max(1, rect.height);
-  dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(W * dpr));
   canvas.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   if (!model) return;
   const cols = model.C;
   const rows = model.R;
@@ -293,8 +315,8 @@ function measure() {
     gauge: gauge,
     cols: cols,
     rows: rows,
-    originX: margin + Math.max(0, (innerW - blockW) / 2),
-    originY: topH + Math.max(0, (innerH - blockH) / 2),
+    originX: Math.round(margin + Math.max(0, (innerW - blockW) / 2)),
+    originY: Math.round(topH + Math.max(0, (innerH - blockH) / 2)),
     topH: topH,
     botH: botH,
   };
@@ -330,6 +352,29 @@ function nearest(letter, other) {
     if (d < score) { score = d; best = cell; }
   });
   return best;
+}
+
+function cacheTanks() {
+  tankCells = [];
+  tankSpan = [];
+  tankLetter = [];
+  const cols = model.C;
+  for (let t = 0; t < model.P.nTanks; t++) {
+    const letter = String.fromCharCode(65 + t);
+    const cells = [];
+    let min = 99;
+    let max = -1;
+    for (let r = 0; r < model.R; r++) for (let c = 0; c < model.C; c++) {
+      if (model.letterAt[r][c] === letter) {
+        cells.push(r * cols + c);
+        if (r < min) min = r;
+        if (r > max) max = r;
+      }
+    }
+    tankLetter.push(letter);
+    tankCells.push(cells);
+    tankSpan.push({ min: min, max: max });
+  }
 }
 
 function cellsOf(letter) {
@@ -810,20 +855,252 @@ function tutorialAnchor() {
 }
 
 const profile = { frames: 0, total: 0, bake: 0, tanks: 0, blit: 0, gauges: 0 };
+const boxScratch = { x: 0, y: 0, w: 0, h: 0 };
+
+function sloshAmt(t) {
+  if (reduce) return 0;
+  return slosh[tankLetter[t]].x * 0.04;
+}
+
+function setBox(r, c) {
+  const cell = layout.cell;
+  boxScratch.x = layout.originX + c * cell;
+  boxScratch.y = layout.originY + r * cell;
+  boxScratch.w = cell;
+  boxScratch.h = cell;
+  return boxScratch;
+}
+
+function blit(src, x, y, w, h) {
+  const d = dpr;
+  ctx.drawImage(src, x * d, y * d, w * d, h * d, x, y, w, h);
+}
+
+function ensureMasks() {
+  const n = model.R * model.C;
+  if (dirty && dirty.length === n) return;
+  dirty = new Uint8Array(n);
+  fxMask = new Uint8Array(n);
+  fxPrev = new Uint8Array(n);
+}
+
+let frostN = 0;
+let markN = 0;
+function cheapStamp() {
+  let n = 0;
+  let m = 0;
+  let h = 0;
+  for (const k in state.frost) { n++; h = (h * 33 + k.charCodeAt(0)) | 0; }
+  for (const k in state.marks) { m++; h = (h * 33 + k.charCodeAt(0)) | 0; }
+  frostN = n;
+  markN = m;
+  return n + m * 64 + h * 4096;
+}
+
+function gaugeSignature(now) {
+  const intro = clamp((now - levelT) / 450, 0, 1);
+  const q = intro >= 1 ? 8 : Math.round(intro * 5);
+  let h = q * 131 + (preview ? preview.r * 16 + preview.c : 97) + state.spills * 17;
+  const comm = state.committed;
+  for (let i = 0; i < comm.length; i++) h = (h * 33 + comm[i]) | 0;
+  for (const id in pops) {
+    const u = now - pops[id];
+    if (u >= 0 && u < 160) h = (h * 33 + (u / 32 | 0) + id.charCodeAt(0)) | 0;
+  }
+  return h;
+}
+
+function markDirty(idx) {
+  if (dirty[idx]) return;
+  dirty[idx] = 1;
+}
+
+function markFx(idx) {
+  fxMask[idx] = 1;
+  markDirty(idx);
+}
+
+function markGhost(p) {
+  if (!p) return;
+  const committed = state.committed[p.g];
+  const cells = model.P.gcells[p.g];
+  for (let i = 0; i < cells.length; i++) {
+    const r = cells[i][0];
+    if (r < p.row || r >= committed) continue;
+    markDirty(r * model.C + cells[i][1]);
+  }
+}
+
+function markCircle(x, y, rad) {
+  const cell = layout.cell;
+  const c0 = Math.max(0, Math.floor((x - rad - layout.originX) / cell));
+  const c1 = Math.min(model.C - 1, Math.floor((x + rad - layout.originX) / cell));
+  const r0 = Math.max(0, Math.floor((y - rad - layout.originY) / cell));
+  const r1 = Math.min(model.R - 1, Math.floor((y + rad - layout.originY) / cell));
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) markFx(r * model.C + c);
+}
+
+function paintCellBody(r, c, box, now) {
+  const letter = model.letterAt[r][c];
+  const t = letter.charCodeAt(0) - 65;
+  const visual = shown[letter] + sloshAmt(t);
+  const frac = wetFraction(r, visual);
+  if (frac > 0) {
+    const h = frac * box.h;
+    ctx.fillStyle = '#0E8C9A';
+    ctx.fillRect(box.x + 2, box.y + box.h - h, box.w - 4, h);
+    ctx.fillStyle = 'rgba(47, 217, 201, 0.85)';
+    ctx.fillRect(box.x + 2, box.y + box.h - h, box.w - 4, Math.min(h, Math.max(3, box.h * 0.22)));
+  }
+  const span = tankSpan[t];
+  if (visual < span.max + 1) {
+    const surface = visual <= span.min ? span.min : visual;
+    const row = surface <= span.min ? span.min : Math.floor(surface);
+    if (row === r) {
+      const y = Math.max(box.y + 3, Math.min(box.y + box.h - 3, layout.originY + surface * layout.cell));
+      ctx.strokeStyle = '#E7FFFB';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(box.x + 3, y);
+      ctx.lineTo(box.x + box.w - 3, y);
+      ctx.stroke();
+    }
+  }
+  if (preview && preview.g === model.groupAt[r][c]) {
+    const committed = state.committed[preview.g];
+    if (r >= preview.row && r < committed) {
+      ctx.globalAlpha = GHOST.alpha;
+      ctx.fillStyle = GHOST.color;
+      ctx.fillRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6);
+      ctx.globalAlpha = 1;
+    }
+    if (r === preview.row) {
+      const y = Math.max(box.y + 3, layout.originY + preview.row * layout.cell);
+      ctx.strokeStyle = GHOST.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(box.x + 3, y);
+      ctx.lineTo(box.x + box.w - 3, y);
+      ctx.stroke();
+    }
+  }
+  if (frostN || markN) {
+    const key = r + ',' + c;
+    if (frostN && state.frost[key] && (frostAt[key] || 0) <= now) drawFrost(r, c);
+    if (markN && state.marks[key]) drawMark(r, c);
+  }
+  if (pulse && pulse.r === r && pulse.c === c) {
+    const u = (now - pulse.start) / 800;
+    if (u < 1) {
+      ctx.strokeStyle = 'rgba(244, 239, 226,' + (1 - u) + ')';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6);
+    }
+  }
+  if (keysOn && cursor.r === r && cursor.c === c) {
+    ctx.strokeStyle = 'rgba(244, 239, 226, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(box.x + 5, box.y + 5, box.w - 10, box.h - 10);
+  }
+}
+
+function repaintIndex(idx, now) {
+  const cols = model.C;
+  const r = (idx / cols) | 0;
+  const c = idx - r * cols;
+  const box = setBox(r, c);
+  blit(bakeBack, box.x, box.y, box.w, box.h);
+  paintCellBody(r, c, box, now);
+  blit(bakeLines, box.x, box.y, box.w, box.h);
+  if (model.clue.ducks.length && hasDuck(r, c)) {
+    const bob = reduce ? 0 : Math.sin(now / 280 + c) * 1.4;
+    duckSprite(box.x + box.w * 0.62, box.y + 4 + bob, layout.cell * 0.42);
+  }
+}
+
+function hasDuck(r, c) {
+  const ducks = model.clue.ducks;
+  for (let i = 0; i < ducks.length; i++) if (ducks[i][0] === r && ducks[i][1] === c) return true;
+  return false;
+}
+
+function paintFull(now) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(bakeBack, 0, 0, W, H);
+  drawTanks(now);
+  ctx.drawImage(bakeLines, 0, 0, W, H);
+  drawDucks(now);
+  drawBead(now);
+  drawLaser(now);
+  drawGauges(now);
+  drawCursor();
+  for (let t = 0; t < tankLetter.length; t++) paintedShown[t] = shown[tankLetter[t]] + sloshAmt(t);
+  shownPreview = preview ? { r: preview.r, c: preview.c, g: preview.g, row: preview.row } : null;
+  stampSeen = cheapStamp();
+  gaugeSig = gaugeSignature(now);
+  duckPhase = reduce ? 0 : Math.floor(now / 90);
+  cursorIdx = keysOn ? cursor.r * model.C + cursor.c : -1;
+}
+
+function refreshGauges(now) {
+  const sig = gaugeSignature(now);
+  if (sig === gaugeSig) return;
+  gaugeSig = sig;
+  const x = layout.originX;
+  const y = layout.originY;
+  const bw = layout.cols * layout.cell;
+  const bh = layout.rows * layout.cell;
+  blit(bakeBack, x + bw, y, layout.gauge, bh);
+  blit(bakeBack, x, y + bh, bw + layout.gauge, layout.gauge);
+  drawGauges(now);
+}
+
+function syncBubble() {
+  if (tut && !landscapeLocked()) {
+    placeTutorial();
+    bubbleOn = true;
+  } else if (bubbleOn) {
+    bubble.classList.add('hidden');
+    bubbleOn = false;
+  }
+}
+
 function draw(now) {
   const tDraw = performance.now();
   const dt = Math.min(0.033, lastFrame ? (now - lastFrame) / 1000 : 0.016);
   lastFrame = now;
-  later = later.filter(function (item) {
-    if (item.at <= now) { item.fn(); return false; }
-    return true;
-  });
-  groupLettersAll().forEach(function (letter) {
+  if (later.length) {
+    let w = 0;
+    for (let i = 0; i < later.length; i++) {
+      if (later[i].at <= now) later[i].fn();
+      else later[w++] = later[i];
+    }
+    later.length = w;
+  }
+  for (let t = 0; t < tankLetter.length; t++) {
+    const letter = tankLetter[t];
     shown[letter] = visualOf(letter, now);
     const s = slosh[letter];
-    s.v += (-180 * s.x - 14 * s.v) * dt;
-    s.x += s.v * dt;
-  });
+    if (s.x !== 0 || s.v !== 0) {
+      s.v += (-180 * s.x - 14 * s.v) * dt;
+      s.x += s.v * dt;
+      if (Math.abs(s.x) < 0.02 && Math.abs(s.v) < 0.08) { s.x = 0; s.v = 0; }
+    }
+  }
+  if (tweens.length) {
+    let w = 0;
+    for (let i = 0; i < tweens.length; i++) {
+      const tw = tweens[i];
+      if (now < tw.start + tw.delay + tw.dur) tweens[w++] = tw;
+    }
+    tweens.length = w;
+  }
+  if (bubbles.length) {
+    let w = 0;
+    for (let i = 0; i < bubbles.length; i++) if (now - bubbles[i].start < bubbles[i].life) bubbles[w++] = bubbles[i];
+    bubbles.length = w;
+  }
   shake *= Math.pow(0.04, dt);
   if (tut && tut.step === 'dry' && now - tut.at > 2400) setStep('duck');
   else if (tut && (tut.step === 'duck' || tut.step === 'hidden' || tut.step === 'pipe') && now - tut.at > 3200) tut = null;
@@ -835,31 +1112,113 @@ function draw(now) {
     schedule(90, function () { note('tink', 659, 0.1, 'sine', 0.04); });
   }
 
-  const tBake = performance.now();
   ensureBake();
-  profile.bake += performance.now() - tBake;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
-  const jx = reduce || shake < 0.2 ? 0 : (Math.random() - 0.5) * shake;
-  const jy = reduce || shake < 0.2 ? 0 : (Math.random() - 0.5) * shake;
-  ctx.save();
-  ctx.translate(jx, jy);
-  const tBlit = performance.now();
-  ctx.drawImage(bakeBack, 0, 0, W, H);
-  profile.blit += performance.now() - tBlit;
-  const tTanks = performance.now();
-  drawTanks(now);
-  profile.tanks += performance.now() - tTanks;
-  ctx.drawImage(bakeLines, 0, 0, W, H);
-  drawDucks(now);
-  drawBead(now);
-  drawLaser(now);
-  const tGauges = performance.now();
-  drawGauges(now);
-  profile.gauges += performance.now() - tGauges;
-  drawCursor();
-  ctx.restore();
-  placeTutorial();
+  ensureMasks();
+  const spilling = (spillFx && now - spillFx.start < 380) || (cracks && now - cracks.start < 720);
+  if (spilling) boardReady = false;
+  const stamp = cheapStamp();
+  if (boardReady && stamp !== stampSeen) boardReady = false;
+  if (!boardReady) {
+    paintFull(now);
+    boardReady = true;
+    fxMask.fill(0);
+    fxPrev.fill(0);
+    syncBubble();
+    profile.frames++;
+    profile.total += performance.now() - tDraw;
+    return;
+  }
+
+  dirty.fill(0);
+  fxMask.fill(0);
+  for (let i = 0; i < fxPrev.length; i++) if (fxPrev[i]) dirty[i] = 1;
+  for (let t = 0; t < tankLetter.length; t++) {
+    const visual = shown[tankLetter[t]] + sloshAmt(t);
+    if (paintedShown[t] == null || Math.abs(paintedShown[t] - visual) > 0.012) {
+      const cells = tankCells[t];
+      for (let i = 0; i < cells.length; i++) dirty[cells[i]] = 1;
+      paintedShown[t] = visual;
+    }
+  }
+  const nextPreview = preview ? { r: preview.r, c: preview.c, g: preview.g, row: preview.row } : null;
+  const samePreview = (!shownPreview && !nextPreview) || (shownPreview && nextPreview && shownPreview.r === nextPreview.r && shownPreview.c === nextPreview.c && shownPreview.g === nextPreview.g);
+  if (!samePreview) {
+    markGhost(shownPreview);
+    markGhost(nextPreview);
+    shownPreview = nextPreview;
+  }
+  if (keysOn) {
+    const idx = cursor.r * model.C + cursor.c;
+    if (idx !== cursorIdx) {
+      if (cursorIdx >= 0) dirty[cursorIdx] = 1;
+      dirty[idx] = 1;
+      cursorIdx = idx;
+    }
+  } else if (cursorIdx >= 0) {
+    dirty[cursorIdx] = 1;
+    cursorIdx = -1;
+  }
+  if (model.clue.ducks.length) {
+    const phase = reduce ? 0 : Math.floor(now / 90);
+    if (phase !== duckPhase) {
+      duckPhase = phase;
+      const ducks = model.clue.ducks;
+      for (let i = 0; i < ducks.length; i++) dirty[ducks[i][0] * model.C + ducks[i][1]] = 1;
+    }
+  }
+  if (pulse) {
+    if (now - pulse.start < 800) markFx(pulse.r * model.C + pulse.c);
+    else pulse = null;
+  }
+  if (laser && now >= laser.start && now <= laser.start + laser.dur) {
+    const y = layout.originY + laser.row * layout.cell;
+    const x0 = layout.originX;
+    const x1 = x0 + layout.cols * layout.cell;
+    for (let c = 0; c <= model.C; c++) markCircle(x0 + (x1 - x0) * (c / model.C), y, 5);
+  }
+  if (bead && now >= bead.start && now <= bead.start + bead.dur) {
+    const point = pointAlong(bead.path, (now - bead.start) / bead.dur);
+    markCircle(point.x, point.y, 10);
+  }
+  for (let i = 0; i < bubbles.length; i++) {
+    const bub = bubbles[i];
+    const u = (now - bub.start) / bub.life;
+    markCircle(bub.x, bub.y - u * 18, 4);
+  }
+
+  let nDirty = 0;
+  for (let i = 0; i < dirty.length; i++) if (dirty[i]) nDirty++;
+  if (nDirty) {
+    if (nDirty > 28) {
+      const x = layout.originX;
+      const y = layout.originY;
+      const bw = layout.cols * layout.cell;
+      const bh = layout.rows * layout.cell;
+      blit(bakeBack, x, y, bw, bh);
+      drawTanks(now);
+      blit(bakeLines, x, y, bw, bh);
+      drawDucks(now);
+      for (let t = 0; t < tankLetter.length; t++) paintedShown[t] = shown[tankLetter[t]] + sloshAmt(t);
+    } else {
+      for (let i = 0; i < dirty.length; i++) if (dirty[i]) repaintIndex(i, now);
+    }
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < bubbles.length; i++) {
+      const bub = bubbles[i];
+      const u = (now - bub.start) / bub.life;
+      ctx.globalAlpha = 0.5 * (1 - u);
+      ctx.fillStyle = '#E7FFFB';
+      ctx.beginPath();
+      ctx.arc(bub.x, bub.y - u * 18, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    drawBead(now);
+    drawLaser(now);
+  }
+  fxPrev.set(fxMask);
+  refreshGauges(now);
+  syncBubble();
   profile.frames++;
   profile.total += performance.now() - tDraw;
 }
@@ -905,6 +1264,8 @@ function ensureBake() {
     drawPipes();
   });
   bakeId = id;
+  boardReady = false;
+  gaugeSig = '';
 }
 
 function drawTanks(now) {

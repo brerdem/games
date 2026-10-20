@@ -10,7 +10,7 @@
 
 - Tech: `index.html`, `logic.js`, `game.js`. Classic scripts, system serif, Canvas 2D, synthesised WebAudio. No build step and no network assets. The rules, the T0/T1/T2 solver, the solution counter, and the D1–D7 policies live in `logic.js`.
 - Mechanics: tap previews a waterline, tap again pours it. The pour is correct when the solution waterline is at or above that row. Correct water only rises. A wrong pour frosts every cell of that pipe group on that row and above. Dry marks (long-press or the Mark button) are free and are not treated as facts. A satisfied gauge frosts its remaining cells and never fills them. One hint reveals one cell the solver can prove. Three spills fail the level.
-- Loop: the 12 Appendix 1 levels, unchanged. Stars: 3 for a clear with no spills and no hint, 2 for at most one spill (a hint is allowed), 1 for any other clear. Progress is `localStorage` key `spillproof-progress-v1` (stars, best time, unlock, mute, reduced motion, spill-free streak).
+- Loop: 12 levels. L1–L6 are Appendix 1. L7–L12 were retuned after QA, and L9 and L12 are new boards from revision 2. Stars: 3 for a clear with no spills and no hint, 2 for at most one spill (a hint is allowed), 1 for any other clear. Progress is `localStorage` key `spillproof-progress-v1` (stars, best time, unlock, mute, reduced motion, spill-free streak).
 - Controls: tap to preview, tap again or the Pour button to pour. Long-press (350 ms) or Mark toggles a dry mark. Right-click marks. Arrow keys move a cursor once the keyboard is used; Space or Enter previews then pours; X marks; H hints; R restarts after a confirm; M mutes; Esc opens the menu.
 - Animation and visuals: Night Conservatory. Ink navy, frosted glass, 4 px brass seams, teal water with a meniscus, lavender frost stipple, yellow ducks. A piped pour plays Pressure Rush inside 0.9 s without blocking the next tap: the poured tank rises, a glowing line crosses the board, a bead runs the pipe, the linked tank meets the same line, satisfied gauges pop up a pentatonic, and frost sweeps out. A small shake and `navigator.vibrate` when the device allows. Reduced motion shortens that cascade.
 - Physics: none. Water is an integer row animated with an ease and a damped slosh.
@@ -24,7 +24,7 @@
 
 ## Design decisions
 
-- The 12 levels are the Appendix 1 JSON, unmodified. The acceptance run reproduced the sandbox counts, so nothing in the ladder was edited.
+- L1–L6 are the Appendix 1 JSON. L7–L12 were edited in QA so a single line of counting plus guessing cannot farm them, and revision 2 replaced the L9 and L12 copies with new grids.
 - A tap on another cell replaces the preview. The brief says a tap outside the current tank cancels it; the new tap is that cancel plus the next preview.
 - Level 1 teaches with four short bubbles in sequence: "5 of 5 → all water", "Tap again to pour", "Line done → rest dries", and "Duck = water surface". Section D asks for the duck line and also says three bubbles. The duck is the only place that rule appears, so the fourth line stays.
 - Level 2 has no bubble. The hidden-gauge line is on Level 4 and the pipe line is on Level 5.
@@ -40,10 +40,10 @@
 | D2 count + lowest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D3 count + likeliest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D4 count + assume full loses L3–L12 | PASS | Wins L1–L2, loses L3–L12. Same test |
-| D5 count + random fails at least 60% on L4–L12 | PASS | After the retune: 25, 22, 26, 29, 29, 30, 30, 30, 30 out of 30 |
-| D6 lucky 3★ at most 3% on L4–L12 | PASS | Seed 77, 300 runs. L4–L6 still 3, 2, 3. L7–L12 are 0, 1, 1, 0, 0, 0 |
-| D7 count + one hint-bit fails at least 60% on L4–L12 | PASS | After the retune: 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30 |
-| T1 + random guess on L7–L12 | PASS | Seed 20261020, 300 runs. 3★ is 1, 3, 1, 1, 2, 1. Clears are 55, 64, 50, 47, 61, 35. All under 5% and 25% |
+| D5 count + random fails at least 60% on L4–L12 | PASS | Revision 2: 25, 22, 26, 29, 29, 29, 29, 28, 28 out of 30 |
+| D6 lucky 3★ at most 3% on L4–L12 | PASS | Seed 77, 300 runs. L4–L12 are 3, 2, 3, 0, 1, 0, 0, 0, 0 |
+| D7 count + one hint-bit fails at least 60% on L4–L12 | PASS | Revision 2: 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30 |
+| T1 + random guess on L7–L12 | PASS | Seed 20261020, 300 runs. 3★ is 1, 3, 2, 1, 2, 3. Clears are 55, 64, 52, 47, 61, 53. All under 5% and 25% |
 | D8 previews match | PASS | Correct and wrong previews share alpha 0.35, the dashed teal line, no sound, and no spill pixels. Puzzle state does not change. `browser.test.mjs` |
 | D9 marks leak nothing | PASS | A mark and a long-press leave frost, committed water, and the hint cell unchanged. Logic test checks gauges too |
 | D10 retry resets | PASS | Confirm Retry and the fail-screen Retry both restore a fresh board |
@@ -54,12 +54,12 @@
 | Gauges match the solutions | PASS | Recomputed row and column totals equal every visible clue |
 | Pour, frost, auto-dry, stars | PASS | Wrong frost is only that group at or above the row. The third spill fails. Solution pours clear with 3★. A satisfied line frosts and does not fill |
 | Hint is one proven cell and costs no drop | PASS | Fresh hint on all 12 levels. A second hint does nothing |
-| Cells at least 44 px at 390 and at 375, 42 px at 360 | PASS | Level 12 is 44 px at 390×844 and at 375×667. At 360×800 an 8-wide board plus a gauge column cannot reach 44 px, so the cells stay 42 px |
+| Cells at least 44 px at 390 and at 375, 42 px at 360 | PASS | Level 12 is 44 px at 390×844 and at 375×667. At 360×800 the cells are 42 px. 8×44 is 352, and the leftover width cannot hold a readable gauge |
 | Linked waterlines stay equal | PASS | Level 5 pipe pour: both tanks share one committed row and the same drawn line after the rush |
 | Win and fail by touch | PASS | Double-taps clear Level 1 with ★★★. Three wrong pours open Spilled. Fail Retry resets |
 | Progress survives reload | PASS | The Level 1 star is still 3 after reload |
 | No network, file:// | PASS | `file:// play has no http requests` |
-| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, pouring through Level 12: 55.4 fps. The backing store is capped at 1.5× so the paint stays inside the frame budget |
+| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, touch taps through a full Level 12 solve: 59.4 fps, p95 16.8 ms. Canvas buffer is 780×1688 |
 | Portrait frame | PASS | Shared layout check: 1440×900 and 1920×1080 letterbox at 9:19.5, phones fill 360×800, 390×844, and 430×932, canvas scale is uniform |
 | H1–H5 enjoyment | DROPPED | Section M3 is for Game Tester. This build does not claim them |
 | Sand skin, hint reasons, daily, meta | DROPPED | Optional or post-MVP in sections I and K |
@@ -88,7 +88,7 @@ R0 was REVISE at 68/100 (`QA_REPORT.md`). Originality (SP-011) was not changed.
 
 ### Levels changed
 
-L1–L6 are still Appendix 1. L7–L12 keep a tier-2 what-if solve, the same pipe counts, and the same titles. Hidden gauges went up so a single line of counting gives less away. New T1+rand numbers are seed 20261020 over 300 runs (3★, then clears).
+L1–L6 are still Appendix 1. L7–L12 keep a tier-2 what-if solve, the same pipe counts, and the same titles. Hidden gauges went up so a single line of counting gives less away. The table is the revision 1 measurement. Revision 2 replaced the L9 and L12 mirror boards; their shipping numbers are in the revision 2 section.
 
 | Level | What changed | 3★ | Clears |
 | --- | --- | --- | --- |
@@ -99,11 +99,23 @@ L1–L6 are still Appendix 1. L7–L12 keep a tier-2 what-if solve, the same pip
 | 11 Three Siphons | Same tanks and all three pipes. New waterlines. Hidden gauges 4 → 7 | 2/300 | 61/300 |
 | 12 Grand Cistern | Same situation as level 9. This is the horizontal mirror of the retuned Three Siphons board. Three pipes. Hidden gauges 7 | 1/300 | 35/300 |
 
-Counting players still lose from L4. D5 fail counts on L4–L12 are 25, 22, 26, 29, 29, 30, 30, 30, 30 out of 30. D6 3★ counts are 3, 2, 3, 0, 1, 1, 0, 0, 0 out of 300. D7 fail counts are 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30.
+Counting players still lose from L4. Those D5–D7 lines are the revision 1 figures. Revision 2 measured them again; see the acceptance table.
+
+## QA revision 2
+
+R1 was REVISE at 73/100 (`QA_REPORT.md`). R0 is `QA_REPORT_R0.md`. SP-011 was left alone.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| SP-012 | L9 and L12 are new boards. Neither grid matches another level under rotation or reflection. Both stay uniquely solvable with no guesses, and every pipe is necessary | `logic.js`, logic test | L9 Cross Current: what-if depth 1, T1+rand seed 20261020, 2/300 three-star (0.7%), 52/300 clears (17.3%). L12 Grand Cistern: what-if depth 2, 3/300 three-star (1.0%), 53/300 clears (17.7%) | PASS |
+| SP-007 | The frame test taps every solution cell of L12. Static glass, seams, and pipes stay cached, and a frame repaints only the cells that changed. The canvas buffer uses the device pixel ratio | `game.js`, browser test | 390×844, deviceScaleFactor 2, buffer 780×1688, 4× CPU, real taps: 59.4 fps, p95 16.8 ms | PASS |
+| SP-008 | No layout change. 44 px cells from 372 px of width upward | `game.js` measure | 44 px at 375 and 390. 42 px at 360×800, because 8×44 plus a gauge digit does not fit | PASS |
+
+L9 and L12 keep their titles, sizes, and pipe counts. The tank shapes are new: boundary cells were moved, clues were recomputed from the solution, and the hidden-gauge mask was kept. A logic test rejects any level that matches another under the eight rotations and reflections. L12 needs two what-if passes in `grade()`. Several thousand boundary edits of that board did not produce a third pass that still solved cleanly, so the finale stays at two, which is the bar this cycle set. L1–L8, L10, and L11 were not redrawn.
 
 ## Delivery
 
 - URL: https://brerdem.github.io/games/spillproof/
-- Commit: QA revision 1 on `main`
+- Commit: QA revision 2 on `main`
 - Build: GitHub Actions workflow `ci`, job `spillproof`
-- Game Tester: ready for retest against SP-001 through SP-010. SP-011 was left alone. Level 9 is a mirror of level 8, and level 12 is a mirror of level 11.
+- Game Tester: ready for the final retest of SP-012, SP-007, and SP-008. SP-011 was left alone.
