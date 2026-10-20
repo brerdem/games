@@ -192,28 +192,230 @@ test('cells, buttons, linked waterlines, win, and fail', async () => {
   }
 });
 
-test('the board stays at or above 50fps under 4x CPU throttle', async () => {
+const SIZES = [
+  [360, 800], [375, 667], [390, 844], [393, 852], [412, 915], [414, 896], [430, 932],
+  [768, 1024],
+  [667, 375], [740, 360], [844, 390], [932, 430],
+  [1024, 768], [1280, 800], [1366, 768], [1440, 900], [1920, 1080],
+];
+
+async function burst(page, selector, times) {
+  const box = await page.locator(selector).boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  for (let i = 0; i < times; i++) {
+    await page.touchscreen.tap(x, y);
+    await page.waitForTimeout(60);
+  }
+}
+
+test('overlay double and triple taps do not pour', async () => {
   const browser = await launch();
   try {
+    for (const [width, height] of [[390, 844], [1280, 800], [844, 390]]) {
+      const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: height < 500 || width < 500 });
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', (err) => errors.push(String(err)));
+      await page.goto(fileUrl);
+      await page.waitForFunction(() => window.__spill && window.__spill.ready);
+      await page.evaluate(() => window.__spill.dismissTut());
+      const initial = await page.evaluate(() => window.__spill.snapshot());
+      if (await page.evaluate(() => window.__spill.landscape())) {
+        const before = await page.evaluate(() => window.__spill.snapshot());
+        const box = await page.locator('#rotate').boundingBox();
+        await page.touchscreen.tap(box.x + 20, box.y + 20);
+        await page.touchscreen.tap(box.x + 20, box.y + 20);
+        await page.touchscreen.tap(box.x + 20, box.y + 20);
+        const after = await page.evaluate(() => window.__spill.snapshot());
+        assert.deepEqual(after.committed, before.committed, `landscape ${width}x${height}`);
+        assert.equal(after.spills, 0);
+        await context.close();
+        continue;
+      }
+      await page.evaluate(() => { while (window.__spill.pourNext()) { /* fill */ } });
+      await page.waitForSelector('#win:not(.hidden)');
+      await burst(page, '#win-retry', 3);
+      await page.waitForTimeout(250);
+      let now = await page.evaluate(() => window.__spill.snapshot());
+      assert.equal(now.spills, 0, `retry spills ${width}x${height}`);
+      assert.deepEqual(now.committed, initial.committed);
+      assert.deepEqual(now.marks, {});
+      await page.evaluate(() => { while (window.__spill.pourNext()) { /* fill */ } });
+      await page.waitForSelector('#win:not(.hidden)');
+      await burst(page, '#win-next', 2);
+      await page.waitForTimeout(200);
+      now = await page.evaluate(() => window.__spill.snapshot());
+      assert.equal(now.spills, 0, `next spills ${width}x${height}`);
+      await page.click('#menu');
+      await burst(page, '#resume', 3);
+      await page.waitForTimeout(200);
+      now = await page.evaluate(() => window.__spill.snapshot());
+      assert.equal(now.spills, 0, `resume spills ${width}x${height}`);
+      await page.click('#retry');
+      await burst(page, '#confirm-yes', 3);
+      await page.waitForTimeout(200);
+      now = await page.evaluate(() => window.__spill.snapshot());
+      assert.equal(now.spills, 0, `confirm spills ${width}x${height}`);
+      assert.equal(now.failed, false);
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('the tutorial bubble covers no cells', async () => {
+  const browser = await launch();
+  try {
+    for (const [width, height] of SIZES) {
+      for (const level of [1, 4, 5]) {
+        const page = await browser.newPage({ viewport: { width, height } });
+        await page.goto(`${fileUrl}?level=${level}`);
+        await page.waitForFunction(() => window.__spill && window.__spill.ready);
+        if (level === 1 && height > 520) await page.waitForTimeout(600);
+        const hits = await page.evaluate(() => window.__spill.landscape() ? 0 : window.__spill.bubbleHits());
+        assert.equal(hits, 0, `bubble covers ${hits} at ${width}x${height} L${level}`);
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('landscape phones ask to rotate and a drag or cancel leaves no mark', async () => {
+  const browser = await launch();
+  try {
+    for (const [width, height] of [[844, 390], [932, 430], [740, 360], [667, 375]]) {
+      const page = await browser.newPage({ viewport: { width, height } });
+      await page.goto(fileUrl + '?level=12');
+      await page.waitForFunction(() => window.__spill.ready);
+      const shown = await page.locator('#rotate').isVisible();
+      assert.equal(shown, true, `rotate ${width}x${height}`);
+      const text = await page.locator('#rotate').innerText();
+      assert.match(text, /portrait/i);
+      await page.close();
+    }
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__spill.ready);
+    await page.evaluate(() => window.__spill.dismissTut());
+    const point = await page.evaluate(() => window.__spill.cellCenter(0, 4));
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    await page.mouse.move(point.x + 36, point.y + 28);
+    await page.waitForTimeout(420);
+    await page.mouse.up();
+    assert.deepEqual(await page.evaluate(() => window.__spill.snapshot().marks), {});
+    await page.evaluate((pt) => {
+      const canvas = document.getElementById('c');
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: pt.x, clientY: pt.y, pointerId: 7 }));
+      canvas.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, clientX: pt.x, clientY: pt.y, pointerId: 7 }));
+    }, point);
+    await page.waitForTimeout(420);
+    assert.deepEqual(await page.evaluate(() => window.__spill.snapshot().marks), {});
+  } finally {
+    await browser.close();
+  }
+});
+
+test('Enter focuses Next, help scrolls, and audio waits for a gesture', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    const page = await context.newPage();
+    const logs = [];
+    page.on('console', (msg) => logs.push(msg.text()));
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__spill.ready);
+    await page.waitForTimeout(700);
+    assert.equal(await page.evaluate(() => window.__spill.audioReady()), false);
+    assert.equal(logs.some((line) => /AudioContext|autoplay/i.test(line)), false);
+    await page.evaluate(() => window.__spill.dismissTut());
+    await page.evaluate(() => { while (window.__spill.pourNext()) { /* fill */ } });
+    await page.waitForSelector('#win:not(.hidden)');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'win-next');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.getElementById('level-kicker').textContent.includes('2'));
+    await context.close();
+
+    for (const [width, height] of [[360, 800], [740, 360]]) {
+      const helpPage = await browser.newPage({ viewport: { width, height } });
+      await helpPage.goto(fileUrl);
+      await helpPage.waitForFunction(() => window.__spill.ready);
+      const reachable = await helpPage.evaluate(() => {
+        const help = document.getElementById('help');
+        help.classList.remove('hidden');
+        const sheet = help.querySelector('.sheet');
+        const end = document.getElementById('help-end');
+        sheet.scrollTop = sheet.scrollHeight;
+        const s = sheet.getBoundingClientRect();
+        const e = end.getBoundingClientRect();
+        return e.bottom <= s.bottom + 2 && e.top < s.bottom;
+      });
+      assert.equal(reachable, true, `help ${width}x${height}`);
+      await helpPage.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a touch pour changes the board and 375-wide cells are at least 44 px', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__spill.ready);
+    await page.evaluate(() => window.__spill.dismissTut());
+    const before = await page.evaluate(() => window.__spill.snapshot().committed.join(','));
+    const cell = await page.evaluate(() => window.__spill.solutionTaps()[0]);
+    const point = await page.evaluate((item) => window.__spill.cellCenter(item.r, item.c), cell);
+    await page.touchscreen.tap(point.x, point.y);
+    await page.touchscreen.tap(point.x, point.y);
+    const after = await page.evaluate(() => window.__spill.snapshot().committed.join(','));
+    assert.notEqual(after, before);
+    await context.close();
+    const narrow = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await narrow.goto(fileUrl + '?level=12');
+    await narrow.waitForFunction(() => window.__spill.ready);
+    const size = await narrow.evaluate(() => window.__spill.cellSize());
+    assert.ok(size >= 44, `375 cell ${size}`);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a phone-class 4x throttle stays at or above 50fps during a solve', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
     await page.goto(fileUrl + '?level=12');
     await page.waitForFunction(() => window.__spill && window.__spill.ready);
-    const session = await page.context().newCDPSession(page);
+    await page.evaluate(() => window.__spill.dismissTut());
+    const session = await context.newCDPSession(page);
     await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const fps = await page.evaluate(() => new Promise((resolve) => {
-      const cell = window.__spill.solutionTaps()[0];
-      const point = window.__spill.cellCenter(cell.r, cell.c);
       let frames = 0;
       const start = performance.now();
       function tick(now) {
         frames += 1;
-        if (frames === 2) document.elementFromPoint(point.x, point.y);
+        if (frames % 4 === 0) window.__spill.pourNext();
         if (now - start < 1000) requestAnimationFrame(tick);
         else resolve(frames / ((now - start) / 1000));
       }
       requestAnimationFrame(tick);
     }));
-    console.log(`fps@4x ${fps.toFixed(1)} method=rAF over 1s with Emulation.setCPUThrottlingRate 4, level 12`);
+    console.log(`fps@4x phone dpr2 solve ${fps.toFixed(1)}`);
     assert.ok(fps >= 50, `fps ${fps}`);
   } finally {
     await browser.close();

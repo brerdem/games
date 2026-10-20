@@ -3,7 +3,7 @@
   // at or below that row is water (row 0 is the top). A value of R means empty.
   // The solver and the D1–D7 policies are the sandbox reference, ported as-is.
 
-  var LEVELS = [{"level":1,"title":"First Pour","size":[5,5],"grid":["AAAAB","ACCCB","DCCEB","DEEEF","DDDFF"],"pipes":[],"rowClues":[4,1,4,4,5],"colClues":[5,4,4,3,2],"ducks":[[3,1]],"solutionFirstWaterRow":{"A":0,"B":2,"C":2,"D":2,"E":3,"F":4}},{"level":2,"title":"Two Gauges","size":[5,5],"grid":["AABBB","CABBB","CCBDE","CCDDE","FFFDD"],"pipes":[],"rowClues":[2,2,3,3,2],"colClues":[4,4,1,1,2],"ducks":[],"solutionFirstWaterRow":{"A":0,"B":2,"C":1,"D":4,"E":3,"F":5}},{"level":3,"title":"Hidden Floor","size":[6,6],"grid":["AABCDD","AABCCC","EABFFF","EGBFFH","EGIIIH","EIIJJH"],"pipes":[],"rowClues":[2,3,1,2,2,2],"colClues":[1,1,2,1,2,5],"ducks":[],"solutionFirstWaterRow":{"A":3,"B":2,"C":1,"D":0,"E":5,"F":4,"G":4,"H":3,"I":6,"J":6}},{"level":4,"title":"Blind Row","size":[6,6],"grid":["AAABCC","ADEBFF","GDEEHH","GDDHHI","GJKKLI","JJKKLI"],"pipes":[],"rowClues":[2,null,2,4,2,null],"colClues":[3,3,3,4,2,2],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":1,"C":0,"D":3,"E":2,"F":2,"G":4,"H":3,"I":5,"J":4,"K":5,"L":6}},{"level":5,"title":"First Pipe","size":[7,7],"grid":["AABBBCC","AABDBCC","EEDDFFC","GHHDDFF","GIIDJKK","LMMJJKN","LLMJJKN"],"pipes":[["I","N"]],"rowClues":[3,4,1,2,2,3,null],"colClues":[2,3,4,3,4,1,null],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":0,"C":2,"D":5,"E":3,"F":3,"G":5,"H":4,"I":4,"J":5,"K":7,"L":6,"M":6,"N":4}},{"level":6,"title":"Long Pipe","size":[7,7],"grid":["AABBCCD","EBBBCCD","EEFBCDD","GEFHHDI","GEFJJJI","KKLJMMN","KLLLMMN"],"pipes":[["I","L"]],"rowClues":[4,4,5,null,4,null,6],"colClues":[3,6,5,6,null,4,4],"ducks":[],"solutionFirstWaterRow":{"A":0,"B":0,"C":3,"D":1,"E":2,"F":4,"G":4,"H":3,"I":4,"J":5,"K":7,"L":4,"M":5,"N":6}},{"level":7,"title":"Short Fuse","size":[7,7],"grid":["AAABBCD","AEFFBCD","GEHIIJK","GEHHJJK","LMMMNOO","LLMNNOO","LLLPPOO"],"pipes":[["O","D"]],"rowClues":[null,2,2,5,3,3,null],"colClues":[1,3,2,2,null,4,2],"ducks":[],"solutionFirstWaterRow":{"A":2,"B":1,"C":1,"D":6,"E":2,"F":2,"G":3,"H":4,"I":3,"J":2,"K":3,"L":7,"M":4,"N":5,"O":6,"P":7}},{"level":8,"title":"Twin Pipes","size":[7,7],"grid":["AABCCCD","AABCEDD","AFBBEDD","GFHIEJD","GKHIJJL","MKHINNL","MKHHNNL"],"pipes":[["F","N"],["M","J"]],"rowClues":[null,null,3,1,2,3,7],"colClues":[3,3,4,5,3,null,1],"ducks":[],"solutionFirstWaterRow":{"A":2,"B":1,"C":0,"D":4,"E":3,"F":6,"G":4,"H":5,"I":5,"J":6,"K":4,"L":6,"M":6,"N":6}},{"level":9,"title":"Cross Current","size":[7,7],"grid":["ABCCDEF","ABCCDEF","AGGCDDD","HGGGDII","HJKKLIM","HJNKLOM","HHNKLOO"],"pipes":[["C","F"],["A","D"]],"rowClues":[2,null,null,4,null,3,5],"colClues":[4,5,1,2,1,4,3],"ducks":[],"solutionFirstWaterRow":{"A":4,"B":0,"C":2,"D":4,"E":0,"F":2,"G":3,"H":3,"I":4,"J":5,"K":7,"L":6,"M":4,"N":7,"O":6}},{"level":10,"title":"Deep Cistern","size":[8,8],"grid":["AABBCCDD","EEBBCCCD","EEBBFCGG","HEBIFJGG","HEKIJJGG","HKKIILMM","NNKOOLLP","NNKOOLPP"],"pipes":[["J","M"],["H","L"]],"rowClues":[2,3,4,null,null,null,1,6],"colClues":[null,5,2,2,4,3,4,5],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":4,"C":2,"D":0,"E":1,"F":2,"G":4,"H":7,"I":4,"J":4,"K":6,"L":7,"M":4,"N":7,"O":8,"P":7}},{"level":11,"title":"Three Siphons","size":[8,8],"grid":["AAABBCDD","EEAABCCD","FFGGHHHI","FJGGKHLI","FJMKKHLL","NJMMKKLL","NOOMMPLQ","NOOOPPQQ"],"pipes":[["D","Q"],["A","J"],["I","E"]],"rowClues":[1,4,2,null,4,5,4,8],"colClues":[5,null,3,null,5,5,null,3],"ducks":[],"solutionFirstWaterRow":{"A":5,"B":1,"C":0,"D":1,"E":4,"F":2,"G":3,"H":4,"I":4,"J":5,"K":4,"L":7,"M":5,"N":6,"O":7,"P":7,"Q":1}},{"level":12,"title":"Grand Cistern","size":[8,8],"grid":["ABCCDDEE","ABBFDDGE","AAFFFFGE","HIJFKLLM","HIJJKLMM","HHHJKKKK","NNNJOPPP","NNNJOPPP"],"pipes":[["B","J"],["K","I"],["C","E"]],"rowClues":[null,5,7,4,6,8,null,8],"colClues":[4,6,null,6,6,5,null,5],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":1,"C":2,"D":1,"E":2,"F":2,"G":3,"H":5,"I":3,"J":1,"K":3,"L":5,"M":4,"N":7,"O":7,"P":6}}];
+  var LEVELS = [{"level":1,"title":"First Pour","size":[5,5],"grid":["AAAAB","ACCCB","DCCEB","DEEEF","DDDFF"],"pipes":[],"rowClues":[4,1,4,4,5],"colClues":[5,4,4,3,2],"ducks":[[3,1]],"solutionFirstWaterRow":{"A":0,"B":2,"C":2,"D":2,"E":3,"F":4}},{"level":2,"title":"Two Gauges","size":[5,5],"grid":["AABBB","CABBB","CCBDE","CCDDE","FFFDD"],"pipes":[],"rowClues":[2,2,3,3,2],"colClues":[4,4,1,1,2],"ducks":[],"solutionFirstWaterRow":{"A":0,"B":2,"C":1,"D":4,"E":3,"F":5}},{"level":3,"title":"Hidden Floor","size":[6,6],"grid":["AABCDD","AABCCC","EABFFF","EGBFFH","EGIIIH","EIIJJH"],"pipes":[],"rowClues":[2,3,1,2,2,2],"colClues":[1,1,2,1,2,5],"ducks":[],"solutionFirstWaterRow":{"A":3,"B":2,"C":1,"D":0,"E":5,"F":4,"G":4,"H":3,"I":6,"J":6}},{"level":4,"title":"Blind Row","size":[6,6],"grid":["AAABCC","ADEBFF","GDEEHH","GDDHHI","GJKKLI","JJKKLI"],"pipes":[],"rowClues":[2,null,2,4,2,null],"colClues":[3,3,3,4,2,2],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":1,"C":0,"D":3,"E":2,"F":2,"G":4,"H":3,"I":5,"J":4,"K":5,"L":6}},{"level":5,"title":"First Pipe","size":[7,7],"grid":["AABBBCC","AABDBCC","EEDDFFC","GHHDDFF","GIIDJKK","LMMJJKN","LLMJJKN"],"pipes":[["I","N"]],"rowClues":[3,4,1,2,2,3,null],"colClues":[2,3,4,3,4,1,null],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":0,"C":2,"D":5,"E":3,"F":3,"G":5,"H":4,"I":4,"J":5,"K":7,"L":6,"M":6,"N":4}},{"level":6,"title":"Long Pipe","size":[7,7],"grid":["AABBCCD","EBBBCCD","EEFBCDD","GEFHHDI","GEFJJJI","KKLJMMN","KLLLMMN"],"pipes":[["I","L"]],"rowClues":[4,4,5,null,4,null,6],"colClues":[3,6,5,6,null,4,4],"ducks":[],"solutionFirstWaterRow":{"A":0,"B":0,"C":3,"D":1,"E":2,"F":4,"G":4,"H":3,"I":4,"J":5,"K":7,"L":4,"M":5,"N":6}},{"level":7,"title":"Short Fuse","size":[7,7],"grid":["AAABBCD","AEFFBCD","GEHIIJK","GEHHJJK","LMMMNOO","LLMNNOO","LLLPPOO"],"pipes":[["O","D"]],"rowClues":[null,3,3,3,null,3,null],"colClues":[null,4,3,5,3,3,null],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":2,"C":0,"D":6,"E":1,"F":2,"G":4,"H":3,"I":2,"J":4,"K":4,"L":7,"M":4,"N":5,"O":6,"P":6}},{"level":8,"title":"Twin Pipes","size":[7,7],"grid":["AABCCCD","AABCEDD","AFBBEDD","GFHIEJD","GKHIJJL","MKHINNL","MKHHNNL"],"pipes":[["F","N"],["M","J"]],"rowClues":[null,4,5,2,2,3,7],"colClues":[4,4,null,null,null,4,4],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":2,"C":2,"D":1,"E":3,"F":5,"G":4,"H":6,"I":6,"J":6,"K":4,"L":6,"M":6,"N":5}},{"level":9,"title":"Cross Current","size":[7,7],"grid":["DCCCBAA","DDECBAA","DDEBBFA","DJEIHFG","LJJIHKG","LNNIHKM","LNNHHKM"],"pipes":[["F","N"],["M","J"]],"rowClues":[null,4,5,2,2,3,7],"colClues":[4,4,null,null,null,4,4],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":2,"C":2,"D":1,"E":3,"F":5,"G":4,"H":6,"I":6,"J":6,"K":4,"L":6,"M":6,"N":5}},{"level":10,"title":"Deep Cistern","size":[8,8],"grid":["AABBCCDD","EEBBCCCD","EEBBFCGG","HEBIFJGG","HEKIJJGG","HKKIILMM","NNKOOLLP","NNKOOLPP"],"pipes":[["J","M"],["H","L"]],"rowClues":[null,null,3,4,4,null,4,6],"colClues":[null,3,3,3,4,4,null,4],"ducks":[],"solutionFirstWaterRow":{"A":0,"B":2,"C":2,"D":1,"E":5,"F":3,"G":3,"H":6,"I":5,"J":4,"K":7,"L":6,"M":4,"N":6,"O":7,"P":8}},{"level":11,"title":"Three Siphons","size":[8,8],"grid":["AAABBCDD","EEAABCCD","FFGGHHHI","FJGGKHLI","FJMKKHLL","NJMMKKLL","NOOMMPLQ","NOOOPPQQ"],"pipes":[["D","Q"],["A","J"],["I","E"]],"rowClues":[null,4,null,null,3,null,4,null],"colClues":[6,null,3,2,3,3,null,3],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":1,"C":2,"D":1,"E":4,"F":2,"G":4,"H":4,"I":4,"J":1,"K":5,"L":7,"M":7,"N":5,"O":6,"P":7,"Q":1}},{"level":12,"title":"Grand Cistern","size":[8,8],"grid":["DDCBBAAA","DCCBAAEE","IHHHGGFF","ILHKGGJF","LLHKKMJF","LLKKMMJN","QLPMMOON","QQPPOOON"],"pipes":[["D","Q"],["A","J"],["I","E"]],"rowClues":[null,4,null,null,3,null,4,null],"colClues":[3,null,3,3,2,3,null,6],"ducks":[],"solutionFirstWaterRow":{"A":1,"B":1,"C":2,"D":1,"E":4,"F":2,"G":4,"H":4,"I":4,"J":1,"K":5,"L":7,"M":7,"N":5,"O":6,"P":7,"Q":1}}];
 
   function rng(seed) {
     var s = seed >>> 0 || 1;
@@ -657,6 +657,63 @@
     });
   }
 
+  function uncertainty(model) {
+    var D = initDomains(model.P, model.clue);
+    var lineset = model.lines;
+    if (propT0(model.P, lineset, D) === 'contra') return { groups: 0, cells: 0 };
+    if (propT1(model.P, lineset, D) === 'contra') return { groups: 0, cells: 0 };
+    var groups = 0;
+    var cells = 0;
+    for (var g = 0; g < model.P.G; g++) {
+      if (D[g].size < 2) continue;
+      groups++;
+      var vals = Array.from(D[g]).sort(function (a, b) { return a - b; });
+      var rows = model.P.gvals[g].slice(0, -1);
+      for (var i = 0; i < rows.length; i++) if (rows[i] >= vals[0] && rows[i] < vals[vals.length - 1]) cells++;
+    }
+    return { groups: groups, cells: cells };
+  }
+
+  function trapScore(model) {
+    var D = initDomains(model.P, model.clue);
+    var lineset = model.lines;
+    if (propT0(model.P, lineset, D) === 'contra') return { groups: 0, cells: 0, correct: 0 };
+    if (propT1(model.P, lineset, D) === 'contra') return { groups: 0, cells: 0, correct: 0 };
+    var groups = 0;
+    var cells = 0;
+    var correct = 0;
+    for (var g = 0; g < model.P.G; g++) {
+      if (D[g].size < 2) continue;
+      groups++;
+      var vals = Array.from(D[g]).sort(function (a, b) { return a - b; });
+      var rows = model.P.gvals[g].slice(0, -1);
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (row >= vals[0] && row < vals[vals.length - 1]) {
+          cells++;
+          if (model.sol[g] <= row) correct++;
+        }
+      }
+    }
+    return { groups: groups, cells: cells, correct: correct };
+  }
+
+  function singleLine(seed, runs) {
+    var rand = rng(seed == null ? 20261020 : seed);
+    runs = runs || 300;
+    return models().map(function (model, index) {
+      var zero = 0, wins = 0;
+      for (var n = 0; n < runs; n++) {
+        var result = play(model, 'T1', rand, { guessRule: 'rand' });
+        if (result.win) {
+          wins++;
+          if (result.mistakes === 0) zero++;
+        }
+      }
+      return { level: index + 1, zero: zero, wins: wins, runs: runs };
+    });
+  }
+
   function luck(seed, runs) {
     var rand = rng(seed == null ? 77 : seed);
     runs = runs || 300;
@@ -694,6 +751,9 @@
     gaugeView: gaugeView,
     acceptance: acceptance,
     luck: luck,
+    uncertainty: uncertainty,
+    trapScore: trapScore,
+    singleLine: singleLine,
     models: models,
     cellKey: cellKey,
   };

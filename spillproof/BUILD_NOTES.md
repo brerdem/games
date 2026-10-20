@@ -40,9 +40,10 @@
 | D2 count + lowest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D3 count + likeliest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D4 count + assume full loses L3–L12 | PASS | Wins L1–L2, loses L3–L12. Same test |
-| D5 count + random fails at least 60% on L4–L12 | PASS | 25, 22, 26, 25, 29, 26, 30, 28, 29 out of 30 |
-| D6 lucky 3★ at most 3% on L4–L12 | PASS | Seed 77, 300 runs: 3, 2, 3, 1, 1, 4, 1, 0, 0. Max 4/300 |
-| D7 count + one hint-bit fails at least 60% on L4–L12 | PASS | 27, 21, 19, 24, 25, 25, 28, 29, 26 out of 30 |
+| D5 count + random fails at least 60% on L4–L12 | PASS | After the retune: 25, 22, 26, 29, 29, 30, 30, 30, 30 out of 30 |
+| D6 lucky 3★ at most 3% on L4–L12 | PASS | Seed 77, 300 runs. L4–L6 still 3, 2, 3. L7–L12 are 0, 1, 1, 0, 0, 0 |
+| D7 count + one hint-bit fails at least 60% on L4–L12 | PASS | After the retune: 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30 |
+| T1 + random guess on L7–L12 | PASS | Seed 20261020, 300 runs. 3★ is 1, 3, 1, 1, 2, 1. Clears are 55, 64, 50, 47, 61, 35. All under 5% and 25% |
 | D8 previews match | PASS | Correct and wrong previews share alpha 0.35, the dashed teal line, no sound, and no spill pixels. Puzzle state does not change. `browser.test.mjs` |
 | D9 marks leak nothing | PASS | A mark and a long-press leave frost, committed water, and the hint cell unchanged. Logic test checks gauges too |
 | D10 retry resets | PASS | Confirm Retry and the fail-screen Retry both restore a fresh board |
@@ -53,12 +54,12 @@
 | Gauges match the solutions | PASS | Recomputed row and column totals equal every visible clue |
 | Pour, frost, auto-dry, stars | PASS | Wrong frost is only that group at or above the row. The third spill fails. Solution pours clear with 3★. A satisfied line frosts and does not fill |
 | Hint is one proven cell and costs no drop | PASS | Fresh hint on all 12 levels. A second hint does nothing |
-| Cells at least 44 px at 390, 42 px at 360 | PASS | Level 12 measures 44 px at 390×844 and 42 px at 360×800. Buttons are at least 48 px |
+| Cells at least 44 px at 390 and at 375, 42 px at 360 | PASS | Level 12 is 44 px at 390×844 and at 375×667. At 360×800 an 8-wide board plus a gauge column cannot reach 44 px, so the cells stay 42 px |
 | Linked waterlines stay equal | PASS | Level 5 pipe pour: both tanks share one committed row and the same drawn line after the rush |
 | Win and fail by touch | PASS | Double-taps clear Level 1 with ★★★. Three wrong pours open Spilled. Fail Retry resets |
 | Progress survives reload | PASS | The Level 1 star is still 3 after reload |
 | No network, file:// | PASS | `file:// play has no http requests` |
-| 50 fps at 4× throttle | PASS | Level 12, `Emulation.setCPUThrottlingRate` 4, rAF over 1 s: 60.7 fps |
+| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, pouring through Level 12: 55.4 fps. The backing store is capped at 1.5× so the paint stays inside the frame budget |
 | Portrait frame | PASS | Shared layout check: 1440×900 and 1920×1080 letterbox at 9:19.5, phones fill 360×800, 390×844, and 430×932, canvas scale is uniform |
 | H1–H5 enjoyment | DROPPED | Section M3 is for Game Tester. This build does not claim them |
 | Sand skin, hint reasons, daily, meta | DROPPED | Optional or post-MVP in sections I and K |
@@ -67,9 +68,42 @@ Unverified: haptic tick on a real phone, and whether the pipe moment is what pla
 
 Repro: `node --test --test-timeout=180000 spillproof/tests/logic.test.mjs spillproof/tests/browser.test.mjs`
 
+## QA revision 1
+
+R0 was REVISE at 68/100 (`QA_REPORT.md`). Originality (SP-011) was not changed.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| SP-002 | Board input is ignored for 340 ms after an overlay closes, and a pointer that moved or started during the lock does nothing | `game.js` hide() and the pointer handlers | Triple taps on Retry, Next, Resume, and confirm-Yes at 390×844 and 1280×800 leave spills at 0. A phone landscape tap does not pour | PASS |
+| SP-003 | The tutorial sits in the gap under the board, or in the top band, and it does not receive taps | `index.html`, `game.js` placeTutorial | 17 viewports × L1, L4, L5: 0 cells under the bubble | PASS |
+| SP-001 | L7–L12 were retuned so single-line arc consistency plus guessing no longer farms stars. See the level list below | `logic.js` levels, `singleLine` in the logic test | T1+rand, seed 20261020, 300 runs. Clears ≤25% and 3★ ≤5% on every L7–L12 level. P1–P4 and D1–D10 still pass | PASS |
+| SP-004 | Phones in landscape (height ≤520) show only a rotate-to-portrait card. The board is not drawn at 19 px | `index.html` `#rotate`, `game.js` | Visible at 844×390, 932×430, 740×360, and 667×375 | PASS |
+| SP-005 | A move past 10 px, pointerleave, or pointercancel cancels the hold | `game.js` pointer handlers | Drag-off and a dispatched pointercancel leave marks empty | PASS |
+| SP-006 | The win panel focuses Next, or Retry when Next is disabled. Enter activates it | `game.js` showWin and the key handler | Enter after a clear opens level 2 | PASS |
+| SP-007 | Static glass, seams, and pipes are cached. Frost is a repeated tile. The device pixel ratio is capped at 1.5. The frame test pours during the second | `game.js`, browser test | 55.4 fps at 390×844, deviceScaleFactor 2, 4× CPU, while pouring Level 12 | PASS |
+| SP-008 | Cells go to 44 px from 372 px of width upward, which includes 375 | `game.js` measure | 44 px at 375×667. 360×800 stays 42 px because 8×44 plus a readable gauge does not fit | PASS |
+| SP-009 | AudioContext is created on the first pointer or key, not on load | `game.js` unlockAudio | No AudioContext and no autoplay console line before a gesture | PASS |
+| SP-010 | Sheets scroll, and the help text ends in `#help-end` | `index.html` | The last help line is inside the sheet after scrolling at 360×800 and 740×360 | PASS |
+| SP-011 | No build change | — | Originality is for Game Finder | DROPPED |
+
+### Levels changed
+
+L1–L6 are still Appendix 1. L7–L12 keep a tier-2 what-if solve, the same pipe counts, and the same titles. Hidden gauges went up so a single line of counting gives less away. New T1+rand numbers are seed 20261020 over 300 runs (3★, then clears).
+
+| Level | What changed | 3★ | Clears |
+| --- | --- | --- | --- |
+| 7 Short Fuse | Same tanks and the O–D pipe. New waterlines. Hidden gauges 3 → 5 | 1/300 | 55/300 |
+| 8 Twin Pipes | Same tanks and both pipes. New waterlines. Hidden gauges 3 → 4 | 3/300 | 64/300 |
+| 9 Cross Current | The original grid could not be pushed under a 25% clear rate (best found about 35%). This level is now the horizontal mirror of the retuned Twin Pipes board, so gravity still applies and the shape is flipped. Two pipes. Hidden gauges 4 | 1/300 | 50/300 |
+| 10 Deep Cistern | Same tanks and both pipes. New waterlines. Hidden gauges 4 → 5 | 1/300 | 47/300 |
+| 11 Three Siphons | Same tanks and all three pipes. New waterlines. Hidden gauges 4 → 7 | 2/300 | 61/300 |
+| 12 Grand Cistern | Same situation as level 9. This is the horizontal mirror of the retuned Three Siphons board. Three pipes. Hidden gauges 7 | 1/300 | 35/300 |
+
+Counting players still lose from L4. D5 fail counts on L4–L12 are 25, 22, 26, 29, 29, 30, 30, 30, 30 out of 30. D6 3★ counts are 3, 2, 3, 0, 1, 1, 0, 0, 0 out of 300. D7 fail counts are 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30.
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/spillproof/
-- Commit: the revision that adds `spillproof/` on `main`
-- Build: GitHub Actions workflow `ci`, job `spillproof`, plus the existing Pages workflow
-- Game Tester: ready for a first pass. The levels were not edited. Please judge H1–H5, especially whether spills on L4+ feel like the player's own guess and whether Pressure Rush is the moment people name.
+- Commit: QA revision 1 on `main`
+- Build: GitHub Actions workflow `ci`, job `spillproof`
+- Game Tester: ready for retest against SP-001 through SP-010. SP-011 was left alone. Level 9 is a mirror of level 8, and level 12 is a mirror of level 11.

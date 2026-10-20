@@ -77,24 +77,17 @@
   #bubble {
     position: absolute;
     z-index: 3;
-    max-width: 190px;
-    padding: 10px 12px;
+    max-width: 210px;
+    padding: 8px 10px;
     background: #f4efe2;
     color: #1a1208;
     border-radius: 14px;
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.25;
     box-shadow: 0 8px 20px rgba(0,0,0,.28);
-    pointer-events: auto;
+    pointer-events: none;
   }
-  #bubble:after {
-    content: "";
-    position: absolute;
-    left: 28px; bottom: -7px;
-    border: 8px solid transparent;
-    border-top-color: #f4efe2;
-    border-bottom: 0;
-  }
+  #rotate.overlay { z-index: 6; background: #0B1426; }
   .overlay {
     position: absolute;
     inset: 0;
@@ -108,6 +101,9 @@
   .overlay.hidden, #bubble.hidden { display: none; }
   .sheet {
     width: min(340px, 100%);
+    max-height: calc(100% - 12px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     background: #14233d;
     border: 1px solid rgba(201, 154, 75, .7);
     border-radius: 18px;
@@ -148,7 +144,7 @@
       <button id="hint" type="button" aria-label="Hint">Hint</button>
       <button id="mute" type="button" aria-label="Mute">Snd</button>
     </header>
-    <button id="bubble" class="hidden" type="button"></button>
+    <div id="bubble" class="hidden"></div>
     <footer id="bar">
       <button id="pour" type="button" disabled>Pour</button>
       <button id="mark" type="button" aria-pressed="false">Mark</button>
@@ -173,7 +169,8 @@
     <div id="help" class="overlay hidden">
       <div class="sheet">
         <h2>How to play</h2>
-        <p>Tap a cell to preview the waterline, then tap it again to pour. A wrong pour spills a drop and frosts that row and everything above it. Long-press, or the Mark button, sets a dry mark. Those are free. A duck sits on the surface.</p>
+        <p>Tap a cell to preview the waterline, then tap it again to pour. A wrong pour spills a drop and frosts that row and everything above it. Long-press, or the Mark button, sets a dry mark. Those are free. A duck sits on the surface. Pipes share one waterline, so one pour fills every tank on that line.</p>
+        <p id="help-end">Three spills ends the level. Retry starts the same puzzle over. A hint shows one cell you can already prove, and it costs a star.</p>
         <button id="help-close" type="button">Back</button>
       </div>
     </div>
@@ -198,6 +195,13 @@
           <button id="win-retry" type="button">Retry</button>
           <button id="win-menu" type="button">Levels</button>
         </div>
+      </div>
+    </div>
+    <div id="rotate" class="overlay hidden" role="dialog" aria-label="Rotate to portrait">
+      <div class="sheet">
+        <h2>Turn to portrait</h2>
+        <p>The tanks need a tall screen. Rotate your phone, then pour.</p>
+        <p id="help-end-land">A wrong pour spills one of three drops. Pipes share a waterline. A duck marks the surface.</p>
       </div>
     </div>
     <div id="fail" class="overlay hidden">

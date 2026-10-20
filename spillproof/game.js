@@ -8,7 +8,7 @@ const GLYPH = ['●', '▲', '◆'];
 
 const stage = document.getElementById('stage');
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');
 const levelKicker = document.getElementById('level-kicker');
 const levelLabel = document.getElementById('level-label');
 const dropEls = Array.from(document.querySelectorAll('.drop'));
@@ -63,6 +63,12 @@ let pausedFor = 0;
 let lastFrame = 0;
 let audioCtx = null;
 let noiseBuf = null;
+let audioArmed = false;
+let inputLock = 0;
+let bakeBack = null;
+let bakeLines = null;
+let bakeId = '';
+let frostPattern = null;
 const audioLog = [];
 const events = [];
 let down = null;
@@ -96,15 +102,20 @@ function log(type, extra) {
   events.push(Object.assign({ t: Date.now(), type: type }, extra || {}));
 }
 
-function audio() {
-  if (muted) return null;
+function unlockAudio() {
+  if (audioArmed && audioCtx && audioCtx.state !== 'suspended') return;
+  audioArmed = true;
   try {
     if (!audioCtx) audioCtx = new AudioContext();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    return audioCtx;
   } catch (err) {
-    return null;
+    audioArmed = false;
   }
+}
+
+function audio() {
+  if (!audioArmed || muted || !audioCtx) return null;
+  return audioCtx;
 }
 
 function note(name, freq, dur, type, gain, slide) {
@@ -251,7 +262,7 @@ function measure() {
   const rect = stage.getBoundingClientRect();
   W = Math.max(1, rect.width);
   H = Math.max(1, rect.height);
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = Math.min(1.5, window.devicePixelRatio || 1);
   canvas.width = Math.max(1, Math.round(W * dpr));
   canvas.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -260,18 +271,18 @@ function measure() {
   const rows = model.R;
   const topH = 78;
   const botH = 88;
-  const margin = 2;
+  const margin = 1;
   const innerW = W - margin * 2;
   const innerH = H - topH - botH;
-  let gauge = Math.max(20, Math.min(36, Math.round(innerW * 0.09)));
+  let gauge = Math.max(18, Math.min(36, Math.round(innerW * 0.08)));
   let cell = Math.floor(Math.min((innerW - gauge) / cols, (innerH - gauge) / rows));
-  const minCell = W >= 380 ? 44 : (W >= 350 ? 42 : 30);
+  const minCell = W >= 372 ? 44 : (W >= 350 ? 42 : 30);
   if (cols <= 8 && cell < minCell) {
     const g2 = Math.floor(innerW - minCell * cols);
     const gH = Math.floor(innerH - minCell * rows);
     if (g2 >= 18 && gH >= 18) {
       cell = minCell;
-      gauge = Math.min(g2, gH);
+      gauge = g2;
     }
   }
   cell = Math.min(cell, 76);
@@ -287,6 +298,8 @@ function measure() {
     topH: topH,
     botH: botH,
   };
+  bakeId = '';
+  syncRotate();
 }
 
 function buildPipes() {
@@ -353,8 +366,24 @@ function overlayOpen() {
   return [menuPanel, helpPanel, confirmPanel, winPanel, failPanel].some(function (el) { return !el.classList.contains('hidden'); });
 }
 
-function hide(el) { el.classList.add('hidden'); }
+function hide(el) {
+  if (!el.classList.contains('hidden')) inputLock = nowMs() + 340;
+  el.classList.add('hidden');
+}
 function show(el) { el.classList.remove('hidden'); }
+
+function landscapeLocked() {
+  return window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches;
+}
+
+function syncRotate() {
+  const el = document.getElementById('rotate');
+  if (el) el.classList.toggle('hidden', !landscapeLocked());
+}
+
+function boardBlocked() {
+  return overlayOpen() || landscapeLocked() || nowMs() < inputLock;
+}
 
 function syncHud(force) {
   const kicker = 'Level ' + levelNum;
@@ -597,8 +626,10 @@ function showWin() {
   document.getElementById('win-title').textContent = model.level.title;
   const ms = progress.bestMs[levelNum] || 0;
   document.getElementById('time').textContent = (ms / 1000).toFixed(0) + 's';
-  document.getElementById('win-next').disabled = levelNum >= SL.LEVELS.length;
+  const next = document.getElementById('win-next');
+  next.disabled = levelNum >= SL.LEVELS.length;
   show(winPanel);
+  (next.disabled ? document.getElementById('win-retry') : next).focus({ preventScroll: true });
 }
 
 function showFail() {
@@ -613,28 +644,52 @@ function localPoint(event) {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-canvas.addEventListener('pointerdown', function (event) {
-  if (overlayOpen()) return;
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-  const pt = localPoint(event);
-  down = { x: event.clientX, y: event.clientY, pt: pt, held: false };
+function cancelHold() {
   clearTimeout(holdTimer);
+  holdTimer = 0;
+}
+
+canvas.addEventListener('pointerdown', function (event) {
+  unlockAudio();
+  if (boardBlocked()) { down = null; cancelHold(); return; }
+  const pt = localPoint(event);
+  down = { x: event.clientX, y: event.clientY, pt: pt, held: false, moved: false, t: nowMs() };
+  cancelHold();
   holdTimer = setTimeout(function () {
-    if (!down) return;
+    if (!down || down.moved) return;
     down.held = true;
     const hit = hitCell(down.pt.x, down.pt.y);
     if (hit) doMark(hit.r, hit.c);
   }, 350);
-  canvas.setPointerCapture(event.pointerId);
+  try { canvas.setPointerCapture(event.pointerId); } catch (err) { /* already released */ }
+});
+
+canvas.addEventListener('pointermove', function (event) {
+  if (!down) return;
+  if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 10) {
+    down.moved = true;
+    cancelHold();
+  }
+});
+
+function abortPointer() {
+  cancelHold();
+  down = null;
+}
+
+canvas.addEventListener('pointercancel', abortPointer);
+canvas.addEventListener('pointerleave', function () {
+  if (!down) return;
+  down.moved = true;
+  cancelHold();
 });
 
 canvas.addEventListener('pointerup', function (event) {
-  clearTimeout(holdTimer);
-  if (!down || down.held) { down = null; return; }
-  const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y) > 12;
+  cancelHold();
+  if (!down || down.held || down.moved || down.t < inputLock) { down = null; return; }
   const pt = down.pt;
   down = null;
-  if (moved || overlayOpen()) return;
+  if (boardBlocked()) return;
   const hit = hitCell(pt.x, pt.y);
   if (!hit) { preview = null; syncHud(false); return; }
   doTap(hit.r, hit.c);
@@ -645,13 +700,6 @@ canvas.addEventListener('contextmenu', function (event) {
   const pt = localPoint(event);
   const hit = hitCell(pt.x, pt.y);
   if (hit) doMark(hit.r, hit.c);
-});
-
-bubble.addEventListener('click', function () {
-  if (!tut) return;
-  if (tut.step === 'dry') setStep('duck');
-  else if (tut.step === 'duck' || tut.step === 'hidden' || tut.step === 'pipe' || tut.step === 'again') tut = null;
-  else if (tut.step === 'full') setStep('again');
 });
 
 pourBtn.addEventListener('click', function () {
@@ -679,7 +727,9 @@ document.getElementById('win-retry').addEventListener('click', function () { loa
 document.getElementById('win-next').addEventListener('click', function () { loadLevel(levelNum + 1); });
 document.getElementById('win-menu').addEventListener('click', function () { hide(winPanel); openMenu(); });
 
+window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', function (event) {
+  unlockAudio();
   const key = event.key.toLowerCase();
   if (key === 'escape') {
     event.preventDefault();
@@ -693,7 +743,16 @@ window.addEventListener('keydown', function (event) {
     if (key === 'enter') { hide(confirmPanel); loadLevel(levelNum); }
     return;
   }
-  if (overlayOpen()) return;
+  if (!winPanel.classList.contains('hidden')) {
+    if (key === 'enter') {
+      event.preventDefault();
+      const next = document.getElementById('win-next');
+      if (!next.disabled) next.click();
+      else document.getElementById('win-retry').click();
+    }
+    return;
+  }
+  if (overlayOpen() || landscapeLocked()) return;
   if (key === 'arrowup' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowright' || key === ' ' || key === 'enter' || key === 'x') {
     keysOn = true;
   }
@@ -750,7 +809,9 @@ function tutorialAnchor() {
   return null;
 }
 
+const profile = { frames: 0, total: 0, bake: 0, tanks: 0, blit: 0, gauges: 0 };
 function draw(now) {
+  const tDraw = performance.now();
   const dt = Math.min(0.033, lastFrame ? (now - lastFrame) / 1000 : 0.016);
   lastFrame = now;
   later = later.filter(function (item) {
@@ -768,45 +829,86 @@ function draw(now) {
   else if (tut && (tut.step === 'duck' || tut.step === 'hidden' || tut.step === 'pipe') && now - tut.at > 3200) tut = null;
   if (winAt && !ended && now - winAt > (reduce ? 180 : 700)) showWin();
   if (failAt && !ended && now - failAt > (reduce ? 180 : 480)) showFail();
-  if (!introPlayed && now - levelT > 420) {
+  if (!introPlayed && audioArmed && now - levelT > 420) {
     introPlayed = true;
     note('tink', 523, 0.1, 'sine', 0.05);
     schedule(90, function () { note('tink', 659, 0.1, 'sine', 0.04); });
   }
 
+  const tBake = performance.now();
+  ensureBake();
+  profile.bake += performance.now() - tBake;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#0B1426');
-  sky.addColorStop(1, '#14233D');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H);
-  ctx.save();
-  ctx.globalAlpha = 0.08;
-  ctx.strokeStyle = BRASS;
-  ctx.lineWidth = 1;
-  for (let x = 24; x < W; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 24; y < H; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-  ctx.restore();
-
-  const jx = reduce ? 0 : (Math.random() - 0.5) * shake;
-  const jy = reduce ? 0 : (Math.random() - 0.5) * shake;
+  const jx = reduce || shake < 0.2 ? 0 : (Math.random() - 0.5) * shake;
+  const jy = reduce || shake < 0.2 ? 0 : (Math.random() - 0.5) * shake;
   ctx.save();
   ctx.translate(jx, jy);
+  const tBlit = performance.now();
+  ctx.drawImage(bakeBack, 0, 0, W, H);
+  profile.blit += performance.now() - tBlit;
+  const tTanks = performance.now();
   drawTanks(now);
-  drawPipes(now);
+  profile.tanks += performance.now() - tTanks;
+  ctx.drawImage(bakeLines, 0, 0, W, H);
+  drawDucks(now);
+  drawBead(now);
+  drawLaser(now);
+  const tGauges = performance.now();
   drawGauges(now);
+  profile.gauges += performance.now() - tGauges;
   drawCursor();
   ctx.restore();
-  placeTutorial(now);
+  placeTutorial();
+  profile.frames++;
+  profile.total += performance.now() - tDraw;
+}
+
+function paintLayer(layer, fn) {
+  const prev = ctx;
+  ctx = layer.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  fn();
+  ctx = prev;
+}
+
+function ensureBake() {
+  const id = [levelNum, Math.round(W * 10), Math.round(H * 10), dpr, layout.cell, Math.round(layout.originX), Math.round(layout.originY)].join(':');
+  if (bakeId === id && bakeBack && bakeLines) return;
+  bakeBack = document.createElement('canvas');
+  bakeLines = document.createElement('canvas');
+  bakeBack.width = bakeLines.width = canvas.width;
+  bakeLines.height = bakeBack.height = canvas.height;
+  paintLayer(bakeBack, function () {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#0B1426');
+    sky.addColorStop(1, '#14233D');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.strokeStyle = BRASS;
+    ctx.lineWidth = 1;
+    for (let x = 24; x < W; x += 28) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 24; y < H; y += 28) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.restore();
+    for (let r = 0; r < model.R; r++) for (let c = 0; c < model.C; c++) {
+      const box = cellRect(r, c);
+      ctx.fillStyle = 'rgba(30, 46, 74, 0.78)';
+      ctx.fillRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
+    }
+  });
+  paintLayer(bakeLines, function () {
+    drawSeams();
+    drawGlyphs();
+    drawPipes();
+  });
+  bakeId = id;
 }
 
 function drawTanks(now) {
   const cell = layout.cell;
-  for (let r = 0; r < model.R; r++) for (let c = 0; c < model.C; c++) {
-    const box = cellRect(r, c);
-    ctx.fillStyle = 'rgba(30, 46, 74, 0.78)';
-    ctx.fillRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
-  }
   for (let t = 0; t < model.P.nTanks; t++) {
     const letter = String.fromCharCode(65 + t);
     const visual = shown[letter] + (reduce ? 0 : slosh[letter].x * 0.04);
@@ -846,9 +948,6 @@ function drawTanks(now) {
     const parts = key.split(',');
     drawMark(+parts[0], +parts[1]);
   });
-  drawSeams();
-  drawDucks(now);
-  drawGlyphs();
   if (pulse) {
     const u = (now - pulse.start) / 800;
     if (u < 1) {
@@ -881,20 +980,21 @@ function drawTanks(now) {
     });
     ctx.stroke();
   }
-  if (laser && now >= laser.start && now <= laser.start + laser.dur && !reduce) {
-    const u = (now - laser.start) / laser.dur;
-    const y = layout.originY + laser.row * layout.cell;
-    ctx.save();
-    ctx.shadowColor = '#E9FFF8';
-    ctx.shadowBlur = 12;
-    ctx.strokeStyle = 'rgba(233,255,248,' + (1 - u) + ')';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(layout.originX, y);
-    ctx.lineTo(layout.originX + layout.cols * layout.cell, y);
-    ctx.stroke();
-    ctx.restore();
-  }
+}
+
+function drawLaser(now) {
+  if (!laser || reduce || now < laser.start || now > laser.start + laser.dur) return;
+  const u = (now - laser.start) / laser.dur;
+  const y = layout.originY + laser.row * layout.cell;
+  ctx.strokeStyle = 'rgba(180, 255, 244,' + (0.35 * (1 - u)) + ')';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(layout.originX, y);
+  ctx.lineTo(layout.originX + layout.cols * layout.cell, y);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(233,255,248,' + (1 - u) + ')';
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 function wetFraction(row, visual) {
@@ -949,17 +1049,25 @@ function drawGhost() {
   ctx.restore();
 }
 
-function drawFrost(r, c, now) {
+function frostFill() {
+  if (frostPattern) return frostPattern;
+  const tile = document.createElement('canvas');
+  tile.width = 8;
+  tile.height = 8;
+  const g = tile.getContext('2d');
+  g.fillStyle = 'rgba(185, 182, 232, 0.4)';
+  g.fillRect(0, 0, 8, 8);
+  g.fillStyle = 'rgba(244, 239, 226, 0.75)';
+  g.fillRect(1, 1, 1.5, 1.5);
+  g.fillRect(5, 4, 1.5, 1.5);
+  frostPattern = ctx.createPattern(tile, 'repeat');
+  return frostPattern;
+}
+
+function drawFrost(r, c) {
   const box = cellRect(r, c);
-  ctx.fillStyle = 'rgba(185, 182, 232, 0.35)';
+  ctx.fillStyle = frostFill();
   ctx.fillRect(box.x + 2, box.y + 2, box.w - 4, box.h - 4);
-  ctx.fillStyle = 'rgba(244, 239, 226, 0.55)';
-  const step = Math.max(4, Math.floor(layout.cell / 6));
-  for (let y = box.y + 4; y < box.y + box.h - 2; y += step) {
-    for (let x = box.x + 4 + ((y / step) % 2) * 2; x < box.x + box.w - 2; x += step) {
-      ctx.fillRect(x, y, 1.4, 1.4);
-    }
-  }
 }
 
 function drawMark(r, c) {
@@ -1080,17 +1188,20 @@ function drawPipes(now) {
       ctx.stroke();
     });
   });
-  if (bead && now >= bead.start && now <= bead.start + bead.dur) {
-    const u = (now - bead.start) / bead.dur;
-    const point = pointAlong(bead.path, u);
-    ctx.fillStyle = '#F7FFF8';
-    ctx.shadowColor = '#E9FFF8';
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
+}
+
+function drawBead(now) {
+  if (!bead || now < bead.start || now > bead.start + bead.dur) return;
+  const u = (now - bead.start) / bead.dur;
+  const point = pointAlong(bead.path, u);
+  ctx.fillStyle = 'rgba(200, 255, 244, 0.45)';
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#F7FFF8';
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function pointAlong(path, u) {
@@ -1184,13 +1295,42 @@ function drawCursor() {
   ctx.strokeRect(box.x + 5, box.y + 5, box.w - 10, box.h - 10);
 }
 
-function placeTutorial(now) {
+function placeTutorial() {
+  if (!tut || landscapeLocked()) { bubble.classList.add('hidden'); return; }
   const anchor = tutorialAnchor();
   if (!anchor) { bubble.classList.add('hidden'); return; }
   bubble.classList.remove('hidden');
   bubble.textContent = anchor.text;
-  bubble.style.left = clamp(anchor.x - 90, 8, W - 198) + 'px';
-  bubble.style.top = clamp(anchor.y - 74, 76, H - 160) + 'px';
+  const boardTop = layout.originY;
+  const boardBottom = layout.originY + layout.rows * layout.cell + layout.gauge;
+  const height = Math.max(36, bubble.offsetHeight || 40);
+  const width = Math.min(210, W - 16);
+  let top = boardBottom + 6;
+  if (top + height > H - layout.botH) top = Math.max(layout.topH, boardTop - height - 6);
+  if (top + height > boardTop && top < boardBottom) top = Math.max(4, layout.topH - height);
+  bubble.style.width = width + 'px';
+  bubble.style.left = Math.max(4, (W - width) / 2) + 'px';
+  bubble.style.top = top + 'px';
+  if (bubbleHits() > 0) {
+    bubble.style.top = '4px';
+    bubble.style.left = '4px';
+  }
+}
+
+function bubbleHits() {
+  if (bubble.classList.contains('hidden')) return 0;
+  const stageBox = stage.getBoundingClientRect();
+  const box = bubble.getBoundingClientRect();
+  const x = box.left - stageBox.left;
+  const y = box.top - stageBox.top;
+  const w = box.width;
+  const h = box.height;
+  let n = 0;
+  for (let r = 0; r < model.R; r++) for (let c = 0; c < model.C; c++) {
+    const cell = cellRect(r, c);
+    if (x < cell.x + cell.w && x + w > cell.x && y < cell.y + cell.h && y + h > cell.y) n++;
+  }
+  return n;
 }
 
 function frame(now) { draw(now); requestAnimationFrame(frame); }
@@ -1266,7 +1406,20 @@ window.__spill = {
   },
   solutionTaps: solutionTaps,
   wrongTaps: wrongTaps,
-  dismissTut: function () { tut = null; },
+  dismissTut: function () { tut = null; bubble.classList.add('hidden'); },
+  bubbleHits: bubbleHits,
+  landscape: landscapeLocked,
+  pourNext: function () {
+    const taps = solutionTaps();
+    for (let i = 0; i < taps.length; i++) {
+      const cell = taps[i];
+      const g = model.groupAt[cell.r][cell.c];
+      if (state.committed[g] > model.sol[g]) { doPour(cell.r, cell.c); return true; }
+    }
+    return false;
+  },
+  audioReady: function () { return Boolean(audioCtx); },
+  profile: profile,
   pipeCell: function () {
     const pair = (model.level.pipes || [])[0];
     if (!pair) return null;

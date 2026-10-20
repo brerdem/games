@@ -44,6 +44,17 @@ test('M1 policies match the brief thresholds', () => {
   }
 });
 
+test('single-line logic plus guessing rarely clears L7-L12', () => {
+  const rows = L.singleLine(20261020, 300);
+  for (const row of rows) {
+    console.log(`L${row.level} T1+rand 3-star ${row.zero}/300 clears ${row.wins}/300`);
+    if (row.level >= 7) {
+      assert.ok(row.zero / 300 <= 0.05, `3-star L${row.level} ${row.zero}/300`);
+      assert.ok(row.wins / 300 <= 0.25, `clears L${row.level} ${row.wins}/300`);
+    }
+  }
+});
+
 test('D6 lucky 3-star stays at or under 3 percent on L4-L12', () => {
   const rows = L.luck(77, 300);
   for (const row of rows) {
