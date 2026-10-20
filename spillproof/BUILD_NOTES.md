@@ -59,7 +59,7 @@
 | Win and fail by touch | PASS | Double-taps clear Level 1 with ★★★. Three wrong pours open Spilled. Fail Retry resets |
 | Progress survives reload | PASS | The Level 1 star is still 3 after reload |
 | No network, file:// | PASS | `file:// play has no http requests` |
-| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, touch taps through a full Level 12 solve: 59.4 fps, p95 16.8 ms. Canvas buffer is 780×1688 |
+| 50 fps at 4× throttle during a solve | PASS | Phone-class 390×844, deviceScaleFactor 2, 4× CPU, touch taps through a full Level 12 solve: 57.8 fps on CI, p95 16.7 ms. Canvas buffer is 780×1688 |
 | Portrait frame | PASS | Shared layout check: 1440×900 and 1920×1080 letterbox at 9:19.5, phones fill 360×800, 390×844, and 430×932, canvas scale is uniform |
 | H1–H5 enjoyment | DROPPED | Section M3 is for Game Tester. This build does not claim them |
 | Sand skin, hint reasons, daily, meta | DROPPED | Optional or post-MVP in sections I and K |
@@ -108,7 +108,7 @@ R1 was REVISE at 73/100 (`QA_REPORT.md`). R0 is `QA_REPORT_R0.md`. SP-011 was le
 | ID | Action | What changed | Test | Status |
 | --- | --- | --- | --- | --- |
 | SP-012 | L9 and L12 are new boards. Neither grid matches another level under rotation or reflection. Both stay uniquely solvable with no guesses, and every pipe is necessary | `logic.js`, logic test | L9 Cross Current: what-if depth 1, T1+rand seed 20261020, 2/300 three-star (0.7%), 52/300 clears (17.3%). L12 Grand Cistern: what-if depth 2, 3/300 three-star (1.0%), 53/300 clears (17.7%) | PASS |
-| SP-007 | The frame test taps every solution cell of L12. Static glass, seams, and pipes stay cached, and a frame repaints only the cells that changed. The canvas buffer uses the device pixel ratio | `game.js`, browser test | 390×844, deviceScaleFactor 2, buffer 780×1688, 4× CPU, real taps: 59.4 fps, p95 16.8 ms | PASS |
+| SP-007 | The frame test taps every solution cell of L12. Static glass, seams, and pipes stay cached, and a frame repaints only the cells that changed. The canvas buffer uses the device pixel ratio | `game.js`, browser test | 390×844, deviceScaleFactor 2, buffer 780×1688, 4× CPU, real taps: 57.8 fps on CI, p95 16.7 ms | PASS |
 | SP-008 | No layout change. 44 px cells from 372 px of width upward | `game.js` measure | 44 px at 375 and 390. 42 px at 360×800, because 8×44 plus a gauge digit does not fit | PASS |
 
 L9 and L12 keep their titles, sizes, and pipe counts. The tank shapes are new: boundary cells were moved, clues were recomputed from the solution, and the hidden-gauge mask was kept. A logic test rejects any level that matches another under the eight rotations and reflections. L12 needs two what-if passes in `grade()`. Several thousand boundary edits of that board did not produce a third pass that still solved cleanly, so the finale stays at two, which is the bar this cycle set. L1–L8, L10, and L11 were not redrawn.
