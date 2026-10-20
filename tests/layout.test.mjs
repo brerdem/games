@@ -14,6 +14,7 @@ const GAMES = [
   'flow-fort',
   'sand-strata',
   'top-turner',
+  'spillproof',
 ];
 const PHONE = 390 / 844;
 

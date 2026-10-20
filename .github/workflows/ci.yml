@@ -52,3 +52,15 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - name: Portrait frame and uniform canvas scale
         run: node --test --test-timeout=180000 tests/layout.test.mjs
+
+  spillproof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Spillproof logic and browser gate
+        run: node --test --test-timeout=180000 spillproof/tests/logic.test.mjs spillproof/tests/browser.test.mjs
