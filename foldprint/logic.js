@@ -13,7 +13,7 @@
     { id: 'L6', par: 3, presses: 5, creases: ['H3', 'H4', 'H7'], start: ['......', '......', '..Y...', '......', '..B...', '....R.', '......', '...R..'], target: ['...RR.', '..B...', '..Y.R.', '..G...', '..G...', '..Y.R.', '..BRR.', '..BRR.'] },
     { id: 'L7', par: 5, presses: 7, creases: ['V1', 'V2', 'V4', 'V5'], start: ['B.....', '...R.B', 'B.....', '......', '......', '......', '....R.', '......'], target: ['BB.BB.', 'PPBPPB', 'BB.BB.', '......', '......', '......', 'RRRRRR', '......'] },
     { id: 'L8', par: 5, presses: 7, creases: ['H1', 'H2', 'H4', 'H5'], start: ['....R.', '.R....', '......', '......', '..R...', '......', '..B...', '......'], target: ['.RP.R.', '.RP.R.', '.RP...', '..P.R.', '..P.R.', '.RR...', '.RB...', '..B.R.'] },
-    { id: 'L9', par: 6, presses: 8, creases: ['H1', 'H5', 'H6', 'H7'], start: ['...Y..', '......', '.....B', '......', '..R...', '......', '..Y...', '....Y.'], target: ['...Y..', '...Y..', '..O.YB', '..Y.Y.', '..O.YB', '..O.YB', '..O.YB', '..O.YB'] },
+    { id: 'L9', par: 6, presses: 8, creases: ['H1', 'H5', 'H6', 'H7'], start: ['...Y..', '......', '.....B', '......', '..R...', '......', '..Y...', '....Y.'], target: ['...Y..', '...Y..', '..O.YB', '..Y.Y.', '..O.YB', '..O.Y.', '..O.YB', '..O.YB'] },
     { id: 'L10', par: 6, presses: 8, creases: ['V4', 'H2', 'H5', 'H6', 'H7'], start: ['.....#', 'R..RY.', '...#..', '..Y...', '......', '.....B', '......', '.....B'], target: ['..Y..#', 'R.BOOB', 'R.B#YB', '..G..G', '..B..B', '..G..G', '..G..G', '..G..G'] },
     { id: 'L11', par: 6, presses: 8, creases: ['V5', 'H1', 'H2', 'H4', 'H5'], start: ['..B...', '....B.', '.....#', '......', '......', '..#...', '..Y..Y', '..B..B'], target: ['..B.BB', '..G.GG', '..G.B#', '..G.GG', '..B.BB', '..#.BB', '..G.GG', '..G.BB'] },
     { id: 'L12', par: 6, presses: 8, creases: ['V2', 'H1', 'H2', 'H4', 'H6'], start: ['..#...', '....R.', '......', '..R.#Y', '......', '.Y....', '..B.B.', '......'], target: ['.Y#.PY', '.GG.P.', '.GG.P.', '.OO.#Y', '.RR..Y', '.GG.P.', '.GG.P.', '.RR..Y'] }
@@ -140,72 +140,165 @@
     return { par: par, PP: PP, dt: dt };
   }
 
+  function candidates(level, analysis, cells, counts, policy) {
+    var res = analysis.PP.map(function (P, i) {
+      var t = fold(cells, P);
+      return { i: i, t: t, bad: violates(t, level.target), chg: changedCount(t, cells) };
+    });
+    var live = res.filter(function (r) { return r.chg > 0; });
+    var safe = live.filter(function (r) { return !r.bad; });
+    if (!safe.length) return null;
+    var cand = safe.slice();
+    var creases = level.creases;
+    var flap = function (i) {
+      var c = creases[i];
+      return c.o === 'V' ? Math.min(c.k, level.W - c.k) : Math.min(c.k, level.H - c.k);
+    };
+    var by = function (f, dir) {
+      var v = cand.map(f);
+      var b = dir > 0 ? Math.max.apply(null, v) : Math.min.apply(null, v);
+      cand = cand.filter(function (r, j) { return v[j] === b; });
+    };
+    switch (policy) {
+      case 'RAND': cand = live; break;
+      case 'SAFE1': break;
+      case 'SAFE2': {
+        var ok = cand.filter(function (r) {
+          if (eq(r.t, level.target)) return true;
+          for (var p = 0; p < analysis.PP.length; p++) {
+            var u = fold(r.t, analysis.PP[p]);
+            if (!violates(u, level.target) && !eq(u, r.t)) return true;
+          }
+          return false;
+        });
+        if (ok.length) cand = ok;
+        break;
+      }
+      case 'MINCHG': by(function (r) { return r.chg; }, -1); break;
+      case 'MAXCHG': by(function (r) { return r.chg; }, 1); break;
+      case 'OUTER': by(function (r) { return flap(r.i); }, -1); break;
+      case 'INNER': by(function (r) { return flap(r.i); }, 1); break;
+      case 'VFIRST': by(function (r) { return creases[r.i].o === 'V' ? 1 : 0; }, 1); break;
+      case 'HFIRST': by(function (r) { return creases[r.i].o === 'H' ? 1 : 0; }, 1); break;
+      case 'FRESH': {
+        by(function (r) { return -(counts[r.i] || 0); }, 1);
+        break;
+      }
+      case 'OPT': by(function (r) { return analysis.dt(r.t); }, -1); break;
+      default: break;
+    }
+    return cand;
+  }
+
   function play(level, analysis, policy, rand) {
     var budget = analysis.par + 2;
     var s = level.start.slice();
+    var counts = level.creases.map(function () { return 0; });
     var used = 0;
     var sm = 0;
-    var creases = level.creases;
     while (used < budget) {
       if (eq(s, level.target)) break;
-      var res = analysis.PP.map(function (P, i) {
-        var t = fold(s, P);
-        return { i: i, t: t, bad: violates(t, level.target), chg: changedCount(t, s) };
-      });
-      var live = res.filter(function (r) { return r.chg > 0; });
-      var safe = live.filter(function (r) { return !r.bad; });
-      if (!safe.length) return { win: false, sm: sm, used: used, stuck: true, stars: 0 };
-      var cand = safe;
-      var flap = function (i) {
-        var c = creases[i];
-        return c.o === 'V' ? Math.min(c.k, level.W - c.k) : Math.min(c.k, level.H - c.k);
-      };
-      var by = function (f, dir) {
-        var v = cand.map(f);
-        var b = dir > 0 ? Math.max.apply(null, v) : Math.min.apply(null, v);
-        cand = cand.filter(function (r, j) { return v[j] === b; });
-      };
-      switch (policy) {
-        case 'RAND': cand = live; break;
-        case 'SAFE1': break;
-        case 'SAFE2': {
-          var ok = cand.filter(function (r) {
-            if (eq(r.t, level.target)) return true;
-            for (var p = 0; p < analysis.PP.length; p++) {
-              var u = fold(r.t, analysis.PP[p]);
-              if (!violates(u, level.target) && !eq(u, r.t)) return true;
-            }
-            return false;
-          });
-          if (ok.length) cand = ok;
-          break;
-        }
-        case 'MINCHG': by(function (r) { return r.chg; }, -1); break;
-        case 'MAXCHG': by(function (r) { return r.chg; }, 1); break;
-        case 'OUTER': by(function (r) { return flap(r.i); }, -1); break;
-        case 'INNER': by(function (r) { return flap(r.i); }, 1); break;
-        case 'VFIRST': by(function (r) { return creases[r.i].o === 'V' ? 1 : 0; }, 1); break;
-        case 'HFIRST': by(function (r) { return creases[r.i].o === 'H' ? 1 : 0; }, 1); break;
-        case 'FRESH': {
-          var cnt = {};
-          (s._u || []).forEach(function (i) { cnt[i] = (cnt[i] || 0) + 1; });
-          by(function (r) { return -(cnt[r.i] || 0); }, 1);
-          break;
-        }
-        case 'OPT': by(function (r) { return analysis.dt(r.t); }, -1); break;
-        default: break;
-      }
+      var cand = candidates(level, analysis, s, counts, policy);
+      if (!cand) return { win: false, sm: sm, used: used, stuck: true, stars: 0 };
       var pick = cand[Math.floor(rand() * cand.length)];
       used++;
       if (pick.bad) { sm++; continue; }
-      var hist = (s._u || []).concat([pick.i]);
+      counts = counts.slice();
+      counts[pick.i]++;
       s = pick.t;
-      s._u = hist;
+      s._u = counts.map(function (n, i) { var out = []; for (var k = 0; k < n; k++) out.push(i); return out; }).reduce(function (a, b) { return a.concat(b); }, []);
     }
     var win = eq(s, level.target);
     var left = analysis.par + 2 - used;
     var stars = win ? (left >= 2 ? 3 : left >= 1 ? 2 : 1) : 0;
     return { win: win, sm: sm, used: used, stars: stars, stuck: false };
+  }
+
+  function gcd(a, b) {
+    a = a < 0n ? -a : a;
+    b = b < 0n ? -b : b;
+    while (b) { var t = a % b; a = b; b = t; }
+    return a || 1n;
+  }
+
+  function norm(n, d) {
+    if (d < 0n) { n = -n; d = -d; }
+    var g = gcd(n, d);
+    return [n / g, d / g];
+  }
+
+  function addQ(a, b) {
+    return norm(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
+  }
+
+  function exact(level, policy, hintAt) {
+    var analysis = analyse(level);
+    var budget = analysis.par + 2;
+    var memo = new Map();
+    var zero = [0n, 1n];
+    var one = [1n, 1n];
+    function rec(cells, counts, used) {
+      var won = eq(cells, level.target);
+      if (won) {
+        var star = used <= analysis.par ? one : zero;
+        return [one, star];
+      }
+      if (used >= budget) return [zero, zero];
+      var key = used + '|' + counts.join(',') + '|' + cells.join(',');
+      if (memo.has(key)) return memo.get(key);
+      var cand = null;
+      if (hintAt != null && used === hintAt) {
+        var safeOnly = candidates(level, analysis, cells, counts, 'SAFE1');
+        if (!safeOnly) { memo.set(key, [zero, zero]); return [zero, zero]; }
+        var dist = analysis.dt(cells);
+        var best = safeOnly.filter(function (r) { return analysis.dt(r.t) === dist - 1; });
+        cand = best.length ? best : safeOnly;
+      } else cand = candidates(level, analysis, cells, counts, policy);
+      if (!cand) { memo.set(key, [zero, zero]); return [zero, zero]; }
+      var clear = zero;
+      var stars = zero;
+      for (var i = 0; i < cand.length; i++) {
+        var pick = cand[i];
+        var next;
+        if (pick.bad) next = rec(cells, counts, used + 1);
+        else {
+          var nc = counts.slice();
+          nc[pick.i]++;
+          next = rec(pick.t, nc, used + 1);
+        }
+        clear = addQ(clear, next[0]);
+        stars = addQ(stars, next[1]);
+      }
+      var den = BigInt(cand.length);
+      clear = norm(clear[0], clear[1] * den);
+      stars = norm(stars[0], stars[1] * den);
+      var out = [clear, stars];
+      memo.set(key, out);
+      return out;
+    }
+    var zeros = level.creases.map(function () { return 0; });
+    var got = rec(level.start.slice(), zeros, 0);
+    return {
+      clear: got[0],
+      stars: got[1],
+      clearRate: Number(got[0][0]) / Number(got[0][1]),
+      starRate: Number(got[1][0]) / Number(got[1][1])
+    };
+  }
+
+  function makeLevel(row) {
+    return {
+      n: row.n || 0,
+      id: row.id,
+      title: row.title || row.id,
+      par: row.par,
+      presses: row.presses,
+      creases: row.creases.map(function (c) { return typeof c === 'string' ? parseCrease(c) : { o: c.o, k: c.k, id: c.id || (c.o + c.k) }; }),
+      start: typeof row.start[0] === 'string' ? parseGrid(row.start) : row.start.slice(),
+      target: typeof row.target[0] === 'string' ? parseGrid(row.target) : row.target.slice(),
+      W: W,
+      H: H
+    };
   }
 
   function playHinted(level, analysis, policy, rand, hintAt) {
@@ -432,6 +525,8 @@
     compile: compile,
     analyse: analyse,
     play: play,
+    exact: exact,
+    makeLevel: makeLevel,
     playHinted: playHinted,
     onceSolvable: onceSolvable,
     necessity: necessity,

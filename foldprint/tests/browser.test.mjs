@@ -147,7 +147,8 @@ test('eight viewports keep the sheet on screen and accept a drag', async () => {
       });
       assert.equal(info.tabs, true, width + ' tabs');
       assert.equal(info.off, false, width + ' buttons');
-      if (width >= 360 && width <= 430) assert.ok(info.cell >= 52, width + ' cell ' + info.cell);
+      if (width >= 360 && height >= 800) assert.ok(info.cell >= 52, width + 'x' + height + ' cell ' + info.cell);
+      assert.ok(info.cell >= 44, width + ' cell ' + info.cell);
       if (width >= 1000) {
         assert.ok(Math.abs(info.stage[0] / info.stage[1] - 390 / 844) < 0.03, 'frame ' + info.stage);
         assert.ok(info.stage[0] < width - 200);
@@ -158,6 +159,106 @@ test('eight viewports keep the sheet on screen and accept a drag', async () => {
       assert.equal(errors.length, 0, errors.join('\n'));
       await context.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('L12 outlines are tinted and the stencil card is at least 8 px', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 360, height: 800 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await page.goto(fileUrl + '?level=12');
+    await page.waitForFunction(() => window.__fold.ready);
+    await page.evaluate(() => window.__fold.dismiss());
+    const card = await page.evaluate(() => window.__fold.cardCell());
+    assert.ok(card >= 8, `card cell ${card}`);
+    const hits = await page.evaluate(() => window.__fold.outlineHits());
+    const misses = hits.filter((hit) => !hit.near);
+    assert.equal(misses.length, 0, JSON.stringify(misses.slice(0, 4)));
+    await page.click('#stencil');
+    const legend = await page.textContent('#stencil-legend');
+    for (const name of ['Red', 'Yellow', 'Orange', 'Green', 'Purple']) assert.match(legend, new RegExp(name));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('overlay taps, touchcancel, an outside release, and resize keep the sheet', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__fold.ready);
+    await page.evaluate(() => window.__fold.fastCommit('V3'));
+    const box = await page.locator('#win-next').boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    for (let i = 0; i < 3; i++) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x, y: y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    assert.equal(await page.evaluate(() => document.getElementById('kicker').textContent), 'Sheet 2');
+    await page.evaluate(() => window.__fold.load(3));
+    await drag(page, session, 'V3');
+    const undo = await page.locator('#stuck-undo').boundingBox();
+    const ux = undo.x + undo.width / 2;
+    const uy = undo.y + undo.height / 2;
+    for (let i = 0; i < 3; i++) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: ux, y: uy, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    const afterUndo = await page.evaluate(() => window.__fold.snapshot());
+    assert.equal(afterUndo.failed, false);
+    assert.equal(afterUndo.presses, 2);
+    await page.evaluate(() => window.__fold.load(2));
+    const gesture = await page.evaluate(() => window.__fold.creaseGesture('H4'));
+    await page.evaluate((g) => {
+      const canvas = document.getElementById('c');
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 4, clientX: g.from.x, clientY: g.from.y }));
+      canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 4, clientX: g.to.x, clientY: g.to.y }));
+      canvas.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 4, clientX: g.to.x, clientY: g.to.y }));
+    }, gesture);
+    assert.equal(await page.evaluate(() => window.__fold.snapshot().presses), 4);
+    const outside = await page.evaluate(() => {
+      const g = window.__fold.creaseGesture('H4');
+      const canvas = document.getElementById('c');
+      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 5, clientX: g.from.x, clientY: g.from.y }));
+      canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 5, clientX: g.to.x, clientY: g.to.y }));
+      canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 5, clientX: -20, clientY: g.to.y }));
+      return window.__fold.snapshot().presses;
+    });
+    assert.equal(outside, 4);
+    await drag(page, session, 'H4');
+    const kept = await page.evaluate(() => window.__fold.snapshot());
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.waitForTimeout(100);
+    const shorter = await page.evaluate(() => window.__fold.snapshot());
+    assert.deepEqual(shorter.cells, kept.cells);
+    assert.equal(shorter.presses, kept.presses);
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(50);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(100);
+    const turned = await page.evaluate(() => window.__fold.snapshot());
+    assert.deepEqual(turned.cells, kept.cells);
+    assert.equal(turned.presses, kept.presses);
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.waitForTimeout(100);
+    const narrower = await page.evaluate(() => window.__fold.snapshot());
+    assert.deepEqual(narrower.cells, kept.cells);
+    assert.equal(narrower.presses, kept.presses);
+    await page.evaluate(() => document.getElementById('hint').click());
+    assert.equal(await page.textContent('#lesson'), 'Try the highlighted crease.');
+    await page.click('#fresh');
+    assert.equal(await page.locator('#confirm').evaluate((el) => el.classList.contains('hidden')), false);
+    assert.equal(await page.evaluate(() => window.__fold.snapshot().presses), narrower.presses);
+    await page.evaluate(() => localStorage.setItem('foldprint-progress-v1', JSON.stringify({ stars: { 1: 3 }, unlocked: 4, mute: false, blind: false, parSeen: {} })));
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__fold.ready);
+    assert.equal(await page.textContent('#kicker'), 'Sheet 4');
   } finally {
     await browser.close();
   }

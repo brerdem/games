@@ -19,6 +19,7 @@ const finger = document.getElementById('finger');
 const letterEl = document.getElementById('letter');
 const panels = {
   menu: document.getElementById('menu-panel'),
+  zoom: document.getElementById('stencil-zoom'),
   help: document.getElementById('help'),
   confirm: document.getElementById('confirm'),
   win: document.getElementById('win'),
@@ -107,7 +108,7 @@ function measure() {
   canvas.height = Math.max(1, Math.round(H * dpr));
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
-  const hud = 98;
+  const hud = Math.max(96, Math.ceil(document.getElementById('hud').getBoundingClientRect().height) + 8);
   const bar = 88;
   const availW = W - 8;
   const availH = H - hud - bar - 8;
@@ -144,12 +145,37 @@ function loadLevel(n) {
   document.getElementById('name').textContent = model.title;
   const line = progress.stars[levelNum] ? '' : (LESSON[levelNum] || '');
   lessonEl.textContent = line;
+  inputLock = 0;
+  letterEl.classList.add('hidden');
   finger.classList.toggle('hidden', levelNum !== 1 || !!progress.stars[1]);
   if (levelNum === 1 && !progress.stars[1]) placeFinger(0);
+  fillStencil();
   bakeId = '';
   needPaint = true;
   syncHud();
+  measure();
   log('level', { n: levelNum });
+}
+
+function fillStencil() {
+  const ink = { 1: '#E63946', 2: '#FFC93C', 4: '#2F6FDB', 3: '#F38B2A', 6: '#3BAA5C', 5: '#8E4FC4', 7: '#6B5A4A', '-1': '#E4D8C4' };
+  const word = { 1: 'Red', 2: 'Yellow', 4: 'Blue', 3: 'Orange', 6: 'Green', 5: 'Purple', 7: 'Mud' };
+  const small = document.getElementById('stencil');
+  const big = document.getElementById('stencil-big');
+  small.innerHTML = '';
+  big.innerHTML = '';
+  const seen = [];
+  model.target.forEach(function (v) {
+    const a = document.createElement('i');
+    const b = document.createElement('i');
+    const color = v > 0 ? ink[v] : (v === -1 ? ink[-1] : 'rgba(156,143,122,.35)');
+    a.style.background = color;
+    b.style.background = color;
+    small.appendChild(a);
+    big.appendChild(b);
+    if (v > 0 && seen.indexOf(v) < 0) seen.push(v);
+  });
+  document.getElementById('stencil-legend').textContent = seen.map(function (v) { return word[v]; }).join(', ');
 }
 
 function syncHud() {
@@ -371,7 +397,8 @@ function doHint() {
     lessonEl.textContent = 'This sheet can\'t be finished.';
   } else {
     hintPulse = { index: result.crease, until: nowMs() + 1600 };
-    lessonEl.textContent = 'Try ' + model.creases[result.crease].id + '.';
+    selected = result.crease;
+    lessonEl.textContent = 'Try the highlighted crease.';
     if (!muted) blip(660);
   }
   needPaint = true;
@@ -510,14 +537,23 @@ function drawWax(box) {
 }
 
 function drawPencil(box, mask) {
+  const rx = box.w * 0.40;
+  const ry = box.h * 0.36;
   ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = '#9C8F7A';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
+  ctx.translate(box.x + box.w * 0.5, box.y + box.h * 0.52);
   ctx.beginPath();
-  ctx.ellipse(box.x + box.w * 0.5, box.y + box.h * 0.52, box.w * 0.30, box.h * 0.26, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = INK[mask] || '#9C8F7A';
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.55;
   ctx.stroke();
+  ctx.setLineDash([3, 3]);
+  ctx.globalAlpha = 0.95;
+  ctx.stroke();
+  if (blind) {
+    ctx.clip();
+    paintBits(mask).forEach(function (bit) { pattern(bit, rx, ry); });
+  }
   ctx.restore();
 }
 
@@ -542,7 +578,7 @@ function drawSheet(cells, reveal, skipCrease) {
     if (cells[i] === -1 || model.target[i] === -1) drawWax(box);
     const show = cells[i] > 0 ? cells[i] : 0;
     if (show > 0) drawBlob(box, show, 1, i + 3);
-    else if (model.target[i] > 0 && !(reveal && reveal.hidePencil)) drawPencil(box, model.target[i]);
+    if (model.target[i] > 0 && cells[i] !== model.target[i] && !(reveal && reveal.hidePencil)) drawPencil(box, model.target[i]);
   }
 }
 
@@ -792,7 +828,6 @@ function draw(now) {
   }
   ctx.restore();
   drawTabs();
-  drawStencilCard();
   if (anim && anim.finale && now - anim.t0 > anim.fold + anim.squash + anim.peel) drawPegLine();
   drawFlecks();
   drawLabel();
@@ -891,12 +926,19 @@ canvas.addEventListener('pointermove', function (event) {
   needPaint = true;
 });
 
+function releaseOutside(event) {
+  if (!event) return false;
+  const rect = canvas.getBoundingClientRect();
+  return event.clientX < rect.left || event.clientY < rect.top || event.clientX > rect.right || event.clientY > rect.bottom;
+}
+
 function endDrag(event, cancel) {
   if (!drag || (event && event.pointerId !== drag.id)) return;
+  const outside = !cancel && releaseOutside(event);
   const info = drag;
   drag = null;
   needPaint = true;
-  if (cancel || boardBlocked()) return;
+  if (cancel || outside || boardBlocked()) return;
   if (!info.moved && info.progress < 0.2) {
     selected = info.index;
     syncHud();
@@ -934,7 +976,12 @@ pressBtn.addEventListener('click', function () {
   commit(selected);
 });
 undoBtn.addEventListener('click', function () { unlockAudio(); doUndo(); });
-freshBtn.addEventListener('click', function () { loadLevel(levelNum); });
+freshBtn.addEventListener('click', function () {
+  if (state.pressesLeft < model.presses) show(panels.confirm);
+  else loadLevel(levelNum);
+});
+document.getElementById('stencil').addEventListener('click', function () { show(panels.zoom); });
+document.getElementById('stencil-close').addEventListener('click', function () { hide(panels.zoom); });
 document.getElementById('menu').addEventListener('click', function () { renderLevels(); show(panels.menu); });
 document.getElementById('resume').addEventListener('click', function () { hide(panels.menu); });
 document.getElementById('how').addEventListener('click', function () { hide(panels.menu); show(panels.help); });
@@ -972,7 +1019,7 @@ window.addEventListener('keydown', function (event) {
   }
 });
 
-window.addEventListener('resize', function () { measure(); if (model) loadLevel(levelNum); });
+window.addEventListener('resize', function () { measure(); needPaint = true; });
 if (window.ResizeObserver) new ResizeObserver(function () { measure(); needPaint = true; }).observe(stage);
 
 function toViewport(p) {
@@ -1006,6 +1053,42 @@ window.__fold = {
     });
   },
   dismiss: function () { finger.classList.add('hidden'); lessonEl.textContent = ''; },
+  outlineHits: function () {
+    needPaint = true;
+    draw(nowMs());
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const scale = canvas.width / W;
+    const grey = [156, 143, 122];
+    function rgb(hex) { return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]; }
+    function dist(a, b) { return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]); }
+    const hits = [];
+    for (let i = 0; i < model.target.length; i++) {
+      const mask = model.target[i];
+      if (mask <= 0) continue;
+      if (shown[i] === mask) { hits.push({ i: i, color: INK[mask], near: true }); continue; }
+      const ink = rgb(INK[mask]);
+      const box = cellBox(i);
+      const cx = box.x + box.w * 0.5;
+      const cy = box.y + box.h * 0.52;
+      let near = false;
+      for (let a = 0; a < 20; a++) {
+        const t = a / 20 * Math.PI * 2;
+        const x = Math.round((cx + Math.cos(t) * box.w * 0.40) * scale);
+        const y = Math.round((cy + Math.sin(t) * box.h * 0.36) * scale);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+        const o = (y * canvas.width + x) * 4;
+        const pix = [img[o], img[o + 1], img[o + 2]];
+        if (dist(pix, ink) + 40 < dist(pix, grey)) near = true;
+      }
+      hits.push({ i: i, color: INK[mask], near: near });
+    }
+    return hits;
+  },
+  cardCell: function () {
+    const cell = document.querySelector('#stencil i');
+    const box = cell.getBoundingClientRect();
+    return Math.min(box.width, box.height);
+  },
   landscape: landscapeLocked,
   fastCommit: function (id) {
     const index = model.creases.findIndex(function (c) { return c.id === id; });
@@ -1025,5 +1108,5 @@ window.__fold = {
 
 const params = new URLSearchParams(location.search);
 measure();
-loadLevel(+(params.get('level') || 1));
+loadLevel(params.get('level') ? +params.get('level') : (progress.unlocked || 1));
 requestAnimationFrame(frame);

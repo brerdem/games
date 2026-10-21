@@ -49,7 +49,7 @@
 | D5 least-paint first | PASS | ≤ 30% clear and ≤ 5% 3★ on L4–L12 |
 | D6 outer / inner flap | PASS | 0% on L6–L12. L5 outer 51.2% (≤ 55%) |
 | D7 vertical / horizontal first | PASS | ≤ 15% on L7–L12 |
-| D8 each crease once | PASS | ≤ 16% on L7–L12, and no once-each order solves them |
+| D8 each crease once | PASS | Exact odds. L9 is 1/12 (8.33%) after the row-6 retune. No once-each order solves L7–L12 |
 | D9 hint at the best press | PASS | SAFE2 + one hint ≤ 55% on L7–L12. Highest is L8 at 164/300 |
 | D10 preview fishing | DROPPED | Accepted by the brief: the preview is the one-step safe view, which D2 already fails |
 | P1 optimal planner | PASS | 100% at par on every level |
@@ -61,7 +61,7 @@
 | Landscape rotate prompt | PASS | 844×390 shows only “Turn to portrait”. A tap spends nothing |
 | Overlay lock | PASS | After the menu closes, an immediate press does not fold |
 | Idle frames identical | PASS | Two animation frames of a settled L1 match |
-| 50 fps at 4× during a dragged solve | PASS | L7 Bounce Back, 390×844, deviceScaleFactor 2, buffer scale 1.5 (585 wide), 4× CPU. Three-run minimums of 59.6 and 59.7 fps |
+| 50 fps at 4× during a dragged solve | PASS | L7, 390×844, deviceScaleFactor 2, buffer scale 1.5. Three-run minimum 59.6 fps |
 | Portrait frame | PASS | Desktop letterbox at 9:19.5. Phones fill the screen. Buffer scale is uniform |
 | H2–H5 human play | DROPPED | Section M.2 is for Game Tester |
 | Gallery meta, generator, recorded music | DROPPED | Optional or future in sections J and K |
@@ -69,6 +69,21 @@
 Unverified: haptic tick on a real phone, and whether the rebound reads as an “aha” for a person. Both need a device and Game Tester.
 
 Repro: `node --test --test-timeout=180000 foldprint/tests/logic.test.mjs foldprint/tests/browser.test.mjs`
+
+## QA revision 1
+
+R0 was REVISE at 75/100 (`QA_REPORT.md`). The fold rule is unchanged. Level 9’s target row 6 no longer asks for a blue in the last column, so the once-each policy’s exact clear rate is 1/12 instead of 1/6. Every other sheet is the brief sheet.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| FP-001 | Target outlines use the target ink, and the colour-blind patterns sit in those rings when that mode is on. The stencil card is 8 px per cell and opens larger, with the colour names | `game.js` drawPencil, `#stencil` | L12 at 360×800: every unmatched outline samples nearer its ink than grey. Card cells are 8 px. Legend names red, yellow, orange, green, purple | PASS |
+| FP-002 | A resize or rotate only measures and repaints | `game.js` resize listener | Height 844→780, a landscape round-trip, and a width change keep the same cells and presses | PASS |
+| FP-003 | L9 retuned. Policy odds are exact fractions, not samples | `logic.js` L9 target, `exact()` | L9 FRESH 1/12 = 8.33%. L12 remains the lowest SAFE1 (1/128) and SAFE2 (1/80) | PASS |
+| FP-004 | A pointer that goes up outside the sheet cancels, even after halfway | `game.js` endDrag | A release at x = −20 spends no press. touchcancel spends none | PASS |
+| FP-005 | The hint says “Try the highlighted crease” and selects that tab | `game.js` doHint | The lesson text matches, and the tab uses the selected highlight | PASS |
+| FP-006 | Fresh asks first once a press is spent, and it sits at the opposite end of the bar from Press | `index.html`, `game.js` | After a fold, Fresh opens the confirm card and the sheet is unchanged | PASS |
+| FP-007 | A reload with no `?level=` opens the last unlocked sheet | `game.js` startup | Saved unlock 4 reloads as Sheet 4 | PASS |
+| FP-008 | CI covers overlay triple-taps, touchcancel, the outside release, resize, and exact odds | `tests/browser.test.mjs`, `tests/logic.test.mjs` | The new tests pass with the rest of the gate | PASS |
 
 ## Delivery
 

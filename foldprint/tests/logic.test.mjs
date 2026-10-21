@@ -19,7 +19,7 @@ const SOLUTIONS = [
   ['H3', 'H4', 'H7'],
   ['V2', 'V5', 'V4', 'V2', 'V1'],
   ['H5', 'H2', 'H4', 'H2', 'H1'],
-  ['H1', 'H7', 'H6', 'H5', 'H7', 'H6'],
+  ['H1', 'H7', 'H6', 'H5', 'H6', 'H7'],
   ['H6', 'H5', 'H2', 'V4', 'H6', 'H7'],
   ['H1', 'H2', 'H4', 'H2', 'V5', 'H5'],
   ['H6', 'H4', 'H1', 'H2', 'V2', 'H6']
@@ -126,76 +126,64 @@ test('undo spends a press and restores the previous sheet; a hint blocks three s
   assert.equal(L.starsFor(level, won.state), 2);
 });
 
-test('degenerate strategies fail at the brief thresholds and L12 is the hardest', () => {
-  const runs = 1000;
-  const rand = L.rng(20261021);
+function pct(q) {
+  return (Number(q[0]) / Number(q[1]) * 100).toFixed(2) + '% (' + q[0] + '/' + q[1] + ')';
+}
+
+test('exact policy odds meet the brief caps and L12 is the hardest', () => {
   const rows = L.LEVELS.map((level) => {
-    const analysis = L.analyse(level);
     const tally = {};
     for (const policy of ['RAND', 'SAFE1', 'SAFE2', 'MINCHG', 'MAXCHG', 'OUTER', 'INNER', 'VFIRST', 'HFIRST', 'FRESH', 'OPT']) {
-      let wins = 0;
-      let stars = 0;
-      let parWins = 0;
-      for (let n = 0; n < runs; n++) {
-        const result = L.play(level, analysis, policy, rand);
-        if (result.win) {
-          wins++;
-          if (result.stars === 3) stars++;
-          if (result.used === level.par) parWins++;
-        }
-      }
-      tally[policy] = { wins, stars, parWins };
+      tally[policy] = L.exact(level, policy);
     }
-    console.log(`${level.id} RAND ${tally.RAND.wins} SAFE1 ${tally.SAFE1.wins} SAFE2 ${tally.SAFE2.wins} MAX ${tally.MAXCHG.wins} MIN ${tally.MINCHG.wins}/${tally.MINCHG.stars} OUT ${tally.OUTER.wins} IN ${tally.INNER.wins} V ${tally.VFIRST.wins} H ${tally.HFIRST.wins} FRESH ${tally.FRESH.wins} OPT ${tally.OPT.wins}`);
+    const t = tally;
+    console.log(`${level.id} RAND ${pct(t.RAND.clear)} SAFE1 ${pct(t.SAFE1.clear)} SAFE2 ${pct(t.SAFE2.clear)} FRESH ${pct(t.FRESH.clear)} MIN ${pct(t.MINCHG.clear)}/${pct(t.MINCHG.stars)} OPT ${pct(t.OPT.clear)}`);
     return { level, tally };
   });
   for (const row of rows) {
     const n = row.level.n;
     const t = row.tally;
-    assert.equal(t.OPT.wins, runs, row.level.id);
-    assert.equal(t.OPT.parWins, runs, row.level.id + ' par');
+    const c = (p) => t[p].clearRate;
+    const s = (p) => t[p].starRate;
+    assert.equal(c('OPT'), 1, row.level.id);
+    assert.equal(s('OPT'), 1, row.level.id + ' par');
     if (n >= 7) {
-      assert.ok(t.RAND.wins / runs <= 0.06, `D1 ${row.level.id} ${t.RAND.wins}`);
-      assert.ok(t.SAFE1.wins / runs <= 0.10, `D2 ${row.level.id} ${t.SAFE1.wins}`);
-      assert.ok(t.SAFE2.wins / runs <= 0.20, `D3 ${row.level.id} ${t.SAFE2.wins}`);
-      assert.ok(t.VFIRST.wins / runs <= 0.15 && t.HFIRST.wins / runs <= 0.15, `D7 ${row.level.id}`);
-      assert.ok(t.FRESH.wins / runs <= 0.16, `D8 ${row.level.id} ${t.FRESH.wins}`);
+      assert.ok(c('RAND') <= 0.06, `D1 ${row.level.id} ${c('RAND')}`);
+      assert.ok(c('SAFE1') <= 0.10, `D2 ${row.level.id} ${c('SAFE1')}`);
+      assert.ok(c('SAFE2') <= 0.20, `D3 ${row.level.id} ${c('SAFE2')}`);
+      assert.ok(c('VFIRST') <= 0.15 && c('HFIRST') <= 0.15, `D7 ${row.level.id}`);
+      assert.ok(c('FRESH') <= 0.16, `D8 ${row.level.id} ${c('FRESH')}`);
       assert.equal(L.onceSolvable(row.level), false, row.level.id);
     }
-    if (n >= 4 && n <= 6) assert.ok(t.SAFE1.wins / runs <= 0.20, `D2 ${row.level.id} ${t.SAFE1.wins}`);
-    if (n >= 3) assert.equal(t.MAXCHG.wins, 0, `D4 ${row.level.id}`);
+    if (n >= 4 && n <= 6) assert.ok(c('SAFE1') <= 0.20, `D2 ${row.level.id} ${c('SAFE1')}`);
+    if (n >= 3) assert.equal(c('MAXCHG'), 0, `D4 ${row.level.id}`);
     if (n >= 4) {
-      assert.ok(t.MINCHG.wins / runs <= 0.30, `D5 ${row.level.id} ${t.MINCHG.wins}`);
-      assert.ok(t.MINCHG.stars / runs <= 0.05, `D5 stars ${row.level.id}`);
+      assert.ok(c('MINCHG') <= 0.30, `D5 ${row.level.id} ${c('MINCHG')}`);
+      assert.ok(s('MINCHG') <= 0.05, `D5 stars ${row.level.id}`);
     }
     if (n >= 6) {
-      assert.equal(t.OUTER.wins, 0, `D6 outer ${row.level.id}`);
-      assert.equal(t.INNER.wins, 0, `D6 inner ${row.level.id}`);
+      assert.equal(c('OUTER'), 0, `D6 outer ${row.level.id}`);
+      assert.equal(c('INNER'), 0, `D6 inner ${row.level.id}`);
     }
-    if (n === 4 || n === 5) {
-      assert.ok(t.OUTER.wins / runs <= 0.55 && t.INNER.wins / runs <= 0.55, `D6 ${row.level.id} ${t.OUTER.wins}/${t.INNER.wins}`);
-    }
+    if (n === 4 || n === 5) assert.ok(c('OUTER') <= 0.55 && c('INNER') <= 0.55, `D6 ${row.level.id}`);
   }
   const late = rows.filter((row) => row.level.n >= 7);
-  const safe1 = late.map((row) => row.tally.SAFE1.wins);
-  const safe2 = late.map((row) => row.tally.SAFE2.wins);
+  const safe1 = late.map((row) => row.tally.SAFE1.clearRate);
+  const safe2 = late.map((row) => row.tally.SAFE2.clearRate);
   assert.equal(safe1[safe1.length - 1], Math.min(...safe1), 'L12 SAFE1');
   assert.equal(safe2[safe2.length - 1], Math.min(...safe2), 'L12 SAFE2');
 });
 
 test('a hint on the best press still leaves L7-L12 under 55 percent for two-step play', () => {
   for (const level of L.LEVELS.filter((item) => item.n >= 7)) {
-    const analysis = L.analyse(level);
     let best = 0;
     let bestAt = 0;
     for (let at = 0; at < level.par; at++) {
-      const rand = L.rng(9000 + level.n * 20 + at);
-      let wins = 0;
-      for (let n = 0; n < 300; n++) if (L.playHinted(level, analysis, 'SAFE2', rand, at).win) wins++;
-      if (wins > best) { best = wins; bestAt = at; }
+      const rate = L.exact(level, 'SAFE2', at).clearRate;
+      if (rate > best) { best = rate; bestAt = at; }
     }
-    console.log(`${level.id} SAFE2+hint best ${best}/300 at press ${bestAt}`);
-    assert.ok(best / 300 <= 0.55, `D9 ${level.id} ${best}`);
+    console.log(`${level.id} SAFE2+hint exact ${(best * 100).toFixed(2)}% at press ${bestAt}`);
+    assert.ok(best <= 0.55, `D9 ${level.id} ${best}`);
   }
 });
 

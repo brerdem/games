@@ -52,7 +52,7 @@
     position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
     padding: 8px 10px; z-index: 2; pointer-events: none;
   }
-  #hud { top: 0; min-height: 92px; align-items: flex-start; }
+  #hud { top: 0; min-height: 72px; align-items: flex-start; }
   #bar {
     bottom: 0; min-height: 76px; justify-content: space-between;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
@@ -69,6 +69,21 @@
   }
   .stamp.spent { background: transparent; box-shadow: none; border: 1px dashed #8C7560; }
   #hint, #mute { width: 48px; padding: 0; }
+  #stencil {
+    display: grid;
+    grid-template-columns: repeat(6, 8px);
+    grid-auto-rows: 8px;
+    gap: 1px;
+    width: max-content;
+    min-width: 0;
+    min-height: 0;
+    padding: 3px;
+    background: #F7F1E3;
+    border-color: #C9BBA0;
+  }
+  #stencil i { width: 8px; height: 8px; display: block; border-radius: 1px; }
+  #stencil-big { display: grid; grid-template-columns: repeat(6, 28px); gap: 3px; margin: 8px 0; }
+  #stencil-big i { width: 28px; height: 28px; display: block; border-radius: 4px; }
   .overlay {
     position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
     background: rgba(42, 28, 20, .72); padding: 18px;
@@ -112,15 +127,24 @@
         <div class="stamps" id="stamps"></div>
         <div id="lesson"></div>
       </div>
+      <button id="stencil" type="button" aria-label="Enlarge the stencil"></button>
       <button id="hint" type="button">Hint</button>
       <button id="mute" type="button">Snd</button>
     </header>
     <footer id="bar">
-      <button id="undo" type="button">Undo</button>
       <button id="fresh" type="button">Fresh</button>
-      <button id="press" type="button" disabled>Press</button>
+      <button id="undo" type="button">Undo</button>
       <button id="menu" type="button">Menu</button>
+      <button id="press" type="button" disabled>Press</button>
     </footer>
+    <div id="stencil-zoom" class="overlay hidden">
+      <div class="card">
+        <h2>Stencil</h2>
+        <div id="stencil-big"></div>
+        <p id="stencil-legend"></p>
+        <button id="stencil-close" type="button">Back</button>
+      </div>
+    </div>
     <div id="rotate" class="overlay hidden"><div class="card"><h2>Turn to portrait</h2><p>Foldprint is a tall sheet. Rotate the phone upright.</p></div></div>
     <div id="menu-panel" class="overlay hidden">
       <div class="card">
