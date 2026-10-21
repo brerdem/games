@@ -40,10 +40,10 @@
 | D2 count + lowest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D3 count + likeliest loses L4–L12 | PASS | Wins L1–L3, loses L4–L12. Same test |
 | D4 count + assume full loses L3–L12 | PASS | Wins L1–L2, loses L3–L12. Same test |
-| D5 count + random fails at least 60% on L4–L12 | PASS | Revision 2: 25, 22, 26, 29, 29, 29, 29, 28, 28 out of 30 |
+| D5 count + random fails at least 60% on L4–L12 | PASS | After v1.1: 25, 22, 26, 29, 29, 29, 29, 28, 30 out of 30 |
 | D6 lucky 3★ at most 3% on L4–L12 | PASS | Seed 77, 300 runs. L4–L12 are 3, 2, 3, 0, 1, 0, 0, 0, 0 |
 | D7 count + one hint-bit fails at least 60% on L4–L12 | PASS | Revision 2: 27, 21, 19, 25, 30, 28, 30, 30, 29 out of 30 |
-| T1 + random guess on L7–L12 | PASS | Seed 20261020, 300 runs. 3★ is 1, 3, 2, 1, 2, 3. Clears are 55, 64, 52, 47, 61, 53. All under 5% and 25% |
+| T1 + random guess on L7–L12 | PASS | Seed 20261020, 300 runs. 3★ is 1, 3, 2, 1, 3, 1. Clears are 55, 64, 52, 47, 68, 35. All under 5% and 25% |
 | D8 previews match | PASS | Correct and wrong previews share alpha 0.35, the dashed teal line, no sound, and no spill pixels. Puzzle state does not change. `browser.test.mjs` |
 | D9 marks leak nothing | PASS | A mark and a long-press leave frost, committed water, and the hint cell unchanged. Logic test checks gauges too |
 | D10 retry resets | PASS | Confirm Retry and the fail-screen Retry both restore a fresh board |
@@ -59,7 +59,7 @@
 | Win and fail by touch | PASS | Double-taps clear Level 1 with ★★★. Three wrong pours open Spilled. Fail Retry resets |
 | Progress survives reload | PASS | The Level 1 star is still 3 after reload |
 | No network, file:// | PASS | `file:// play has no http requests` |
-| 50 fps at 4× throttle during a solve | PASS | 390×844, deviceScaleFactor 2, backing store capped at 1.5× (585×1266). Three tapped L12 solves that wait out each pour’s animation: minimum 59.9 fps |
+| 50 fps at 4× throttle during a solve | PASS | 390×844, deviceScaleFactor 2, backing store capped at 1.5× (585×1266). Three tapped solves of the v1.1 finale: minimum 59.6 fps |
 | Portrait frame | PASS | Shared layout check: 1440×900 and 1920×1080 letterbox at 9:19.5, phones fill 360×800, 390×844, and 430×932, canvas scale is uniform |
 | H1–H5 enjoyment | DROPPED | Section M3 is for Game Tester. This build does not claim them |
 | Sand skin, hint reasons, daily, meta | DROPPED | Optional or post-MVP in sections I and K |
@@ -120,6 +120,22 @@ R2 (`QA_REPORT.md`, commit `3937ac5`) measured 32.8, 35.8 and 36.4 fps on a tapp
 | ID | Action | What changed | Test | Status |
 | --- | --- | --- | --- | --- |
 | SP-007 | The canvas buffer scale is `min(devicePixelRatio, 1.5)` on both axes, so the picture stays sharp and is not stretched. Idle frames do not repaint. A pour repaints only the dirty rows, from the cached glass and seam layers, with no per-frame gradient. The frame test is three real tapped solves, including the preview ghost and the pour animation, and it fails if the slowest run is under 50 fps | `game.js` measure and draw, `browser.test.mjs` | Local minimum of three runs: 59.9 fps. Buffer 585×1266 at 390×844 when the device pixel ratio is 2 | PASS |
+
+## Brief v1.1
+
+Burak approved `BRIEF-v1.1.md`. Rules, UI, and levels 1–10 are unchanged. The generator did not produce an 8×8 finale with 3 what-if rounds and a raw search space above Level 11: about 184,000 random boards with 3 pipes never reached 2 rounds, and about 19,000 of those already had a larger search space than Level 11 but only 27 were tier 2, none with 3 rounds. Nudging Level 11’s tanks (4,200 shapes, 321 still tier 2) also stayed at 2 rounds.
+
+The fallback is a swap of the Level 11 and Level 12 puzzles. Titles stay in place. Grand Cistern is now the former Three Siphons board.
+
+| Measure | L7 | L10 | L11 (old L12) | L12 (old L11) | Finale is hardest? |
+| --- | --- | --- | --- | --- | --- |
+| What-if rounds | 3 | 2 | 2 | 2 | No. Level 7 still needs 3. Level 12 ties Level 10 and Level 11 |
+| Raw search space | 15.1M | 93.3M | 74.6M | 149.3M | Yes. 149,299,200 is the largest |
+| Easy openings | — | in the tester’s 9–15 band | the old finale, 16 | in the tester’s 9–15 band | Yes versus the old finale, which had the most easy openings (16). Not claimed as the unique minimum of the ladder |
+
+Two of the three measures hold for the swap: search space, and openings against the defect the tester filed. Depth does not, because Level 7 already needs three rounds and no generated board beat that inside the budget.
+
+Single-line plus guessing, seed 20261020, 300 runs: Level 11 is 3/300 three-star and 68/300 clears. Level 12 is 1/300 three-star and 35/300 clears. Both are under 5% and 25%. Each still has one solution, a zero-guess T2 solve, and 3/3 necessary pipes. No level matches another under rotation or reflection.
 
 ## Delivery
 
