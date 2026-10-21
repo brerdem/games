@@ -177,8 +177,34 @@ test('L12 outlines are tinted and the stencil card is at least 8 px', async () =
     const misses = hits.filter((hit) => !hit.near);
     assert.equal(misses.length, 0, JSON.stringify(misses.slice(0, 4)));
     await page.click('#stencil');
-    const legend = await page.textContent('#stencil-legend');
-    for (const name of ['Red', 'Yellow', 'Orange', 'Green', 'Purple']) assert.match(legend, new RegExp(name));
+    const legend = await page.evaluate(() => [...document.querySelectorAll('#stencil-legend span')].map((el) => {
+      const chip = el.querySelector('i');
+      const style = getComputedStyle(chip);
+      return { text: el.textContent, color: style.backgroundColor, image: style.backgroundImage };
+    }));
+    for (const name of ['Red', 'Yellow', 'Orange', 'Green', 'Purple', 'Wax']) {
+      const item = legend.find((entry) => entry.text === name);
+      assert.ok(item, name);
+      assert.ok(item.color !== 'rgba(0, 0, 0, 0)' || item.image.includes('gradient'), name);
+    }
+    const wax = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('#stencil-big i')];
+      const marked = cells.find((el) => el.classList.contains('wax'));
+      const empty = cells.find((el) => !el.classList.contains('wax') && el.style.background.includes('156'));
+      return {
+        marked: getComputedStyle(marked).backgroundImage,
+        empty: getComputedStyle(empty).backgroundImage
+      };
+    });
+    assert.match(wax.marked, /gradient/);
+    assert.equal(wax.empty, 'none');
+    await page.click('#stencil-close');
+    await page.click('#menu');
+    await page.click('#blind');
+    await page.click('#resume');
+    const contrast = await page.evaluate(() => window.__fold.patternContrast());
+    assert.ok(contrast.darkest < 80, JSON.stringify(contrast));
+    assert.ok(contrast.dark >= 8, JSON.stringify(contrast));
   } finally {
     await browser.close();
   }
@@ -222,15 +248,52 @@ test('overlay taps, touchcancel, an outside release, and resize keep the sheet',
       canvas.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 4, clientX: g.to.x, clientY: g.to.y }));
     }, gesture);
     assert.equal(await page.evaluate(() => window.__fold.snapshot().presses), 4);
-    const outside = await page.evaluate(() => {
+    const places = await page.evaluate(() => {
       const g = window.__fold.creaseGesture('H4');
-      const canvas = document.getElementById('c');
-      canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 5, clientX: g.from.x, clientY: g.from.y }));
-      canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 5, clientX: g.to.x, clientY: g.to.y }));
-      canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 5, clientX: -20, clientY: g.to.y }));
-      return window.__fold.snapshot().presses;
+      const sheet = window.__fold.sheetRect();
+      const bar = document.getElementById('bar').getBoundingClientRect();
+      const buttons = [...document.querySelectorAll('#bar button')].map((el) => el.getBoundingClientRect());
+      const y = bar.top + bar.height / 2;
+      let barPoint = null;
+      for (let x = bar.left + 2; x < bar.right - 2; x += 3) {
+        const onButton = buttons.some((box) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom);
+        if (!onButton) { barPoint = { x: x, y: y }; break; }
+      }
+      return { g: g, sheet: sheet, bar: barPoint, edge: { x: window.innerWidth - 1, y: g.to.y } };
     });
-    assert.equal(outside, 4);
+    assert.ok(places.bar, 'gap in the button bar');
+    assert.ok(places.bar.x >= 0 && places.bar.y >= 0 && places.bar.x < 390 && places.bar.y < 844);
+    assert.ok(places.edge.x >= 0 && places.edge.x < 390 && places.edge.y >= 0 && places.edge.y < 844);
+    const localBar = await page.evaluate((point) => {
+      const rect = document.getElementById('c').getBoundingClientRect();
+      const sheet = window.__fold.sheetRect();
+      const x = (point.x - rect.left) * (sheet.W / rect.width);
+      const y = (point.y - rect.top) * (sheet.H / rect.height);
+      return { x: x, y: y, below: y > sheet.y + sheet.h };
+    }, places.bar);
+    assert.equal(localBar.below, true);
+    const localEdge = await page.evaluate((point) => {
+      const rect = document.getElementById('c').getBoundingClientRect();
+      const sheet = window.__fold.sheetRect();
+      const x = (point.x - rect.left) * (sheet.W / rect.width);
+      return { x: x, past: x > sheet.x + sheet.w };
+    }, places.edge);
+    assert.equal(localEdge.past, true);
+    async function releasePastHalfway(point) {
+      const g = places.g;
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: g.from.x, y: g.from.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: g.to.x, y: g.to.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x, y: point.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    await releasePastHalfway(places.bar);
+    const overBar = await page.evaluate(() => ({ presses: window.__fold.snapshot().presses, at: window.__fold.lastRelease() }));
+    assert.equal(overBar.presses, 4);
+    assert.ok(Math.abs(overBar.at.x - places.bar.x) < 8 && Math.abs(overBar.at.y - places.bar.y) < 8, JSON.stringify(overBar.at));
+    await releasePastHalfway(places.edge);
+    const atEdge = await page.evaluate(() => ({ presses: window.__fold.snapshot().presses, at: window.__fold.lastRelease() }));
+    assert.equal(atEdge.presses, 4);
+    assert.ok(Math.abs(atEdge.at.x - places.edge.x) < 8 && Math.abs(atEdge.at.y - places.edge.y) < 8, JSON.stringify(atEdge.at));
     await drag(page, session, 'H4');
     const kept = await page.evaluate(() => window.__fold.snapshot());
     await page.setViewportSize({ width: 390, height: 780 });

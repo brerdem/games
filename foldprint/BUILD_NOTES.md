@@ -85,9 +85,20 @@ R0 was REVISE at 75/100 (`QA_REPORT.md`). The fold rule is unchanged. Level 9’
 | FP-007 | A reload with no `?level=` opens the last unlocked sheet | `game.js` startup | Saved unlock 4 reloads as Sheet 4 | PASS |
 | FP-008 | CI covers overlay triple-taps, touchcancel, the outside release, resize, and exact odds | `tests/browser.test.mjs`, `tests/logic.test.mjs` | The new tests pass with the rest of the gate | PASS |
 
+## P3 polish
+
+R1 passed at 80/100 (`QA_REPORT.md`). R0 is `QA_REPORT_R0.md`. Levels and the fold rule are unchanged. The DPR cap stays at 1.5.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| FP-004 | A release over the button bar, or on the outer pixels of the viewport, cancels even after the drag has passed halfway. The check uses the sheet, grown only by the tab reach, plus the bar’s own box | `game.js` releaseOutside | A CDP touch that travels past halfway and lifts in a gap of the button bar spends nothing. A second lift at `innerWidth - 1` spends nothing | PASS |
+| FP-008 | The outside-release gate no longer dispatches `clientX: -20` | `tests/browser.test.mjs` | The logged pointerup sits on the bar gap and on the screen edge, both inside the 390×844 viewport | PASS |
+| FP-009 | Colour-blind marks inside the pencil rings are dark ink on the cream paper | `game.js` pattern | L12 with Patterns on: interior samples reach luminance under 80, and at least 8 samples are under 90 | PASS |
+| FP-010 | The zoom legend puts a swatch beside each colour name. Wax cells carry a dark seal on gold, in the card and in the zoom | `index.html`, `game.js` fillStencil | L12 legend has Red, Yellow, Orange, Green, Purple, and Wax, each with a chip. Wax cells use a gradient; empty cells do not | PASS |
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/foldprint/
-- Commit: initial Foldprint on `main`
+- Commit: P3 polish on `main` after the R1 pass
 - Build: GitHub Actions workflow `ci`, job `foldprint`
-- Game Tester: ready for a first pass against section M. The fold theme is shared with paper-fold toys; the contact-print rules are not. That flag is for Burak, not a silent change.
+- Game Tester: R1 passed at 80/100. This pass is FP-004, FP-008, FP-009, and FP-010. Levels and the fold rule are unchanged. The fold theme is shared with paper-fold toys; the contact-print rules are not. That flag is for Burak.

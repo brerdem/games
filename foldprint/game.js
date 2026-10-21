@@ -158,24 +158,45 @@ function loadLevel(n) {
 }
 
 function fillStencil() {
-  const ink = { 1: '#E63946', 2: '#FFC93C', 4: '#2F6FDB', 3: '#F38B2A', 6: '#3BAA5C', 5: '#8E4FC4', 7: '#6B5A4A', '-1': '#E4D8C4' };
+  const ink = { 1: '#E63946', 2: '#FFC93C', 4: '#2F6FDB', 3: '#F38B2A', 6: '#3BAA5C', 5: '#8E4FC4', 7: '#6B5A4A' };
   const word = { 1: 'Red', 2: 'Yellow', 4: 'Blue', 3: 'Orange', 6: 'Green', 5: 'Purple', 7: 'Mud' };
   const small = document.getElementById('stencil');
   const big = document.getElementById('stencil-big');
+  const legend = document.getElementById('stencil-legend');
   small.innerHTML = '';
   big.innerHTML = '';
+  legend.innerHTML = '';
   const seen = [];
+  let wax = false;
   model.target.forEach(function (v) {
     const a = document.createElement('i');
     const b = document.createElement('i');
-    const color = v > 0 ? ink[v] : (v === -1 ? ink[-1] : 'rgba(156,143,122,.35)');
-    a.style.background = color;
-    b.style.background = color;
+    if (v === -1) {
+      a.className = 'wax';
+      b.className = 'wax';
+      wax = true;
+    } else {
+      const color = v > 0 ? ink[v] : 'rgba(156,143,122,.35)';
+      a.style.background = color;
+      b.style.background = color;
+    }
     small.appendChild(a);
     big.appendChild(b);
     if (v > 0 && seen.indexOf(v) < 0) seen.push(v);
   });
-  document.getElementById('stencil-legend').textContent = seen.map(function (v) { return word[v]; }).join(', ');
+  seen.forEach(function (v) { legend.appendChild(legendItem(word[v], ink[v], false)); });
+  if (wax) legend.appendChild(legendItem('Wax', '', true));
+}
+
+function legendItem(name, color, wax) {
+  const span = document.createElement('span');
+  const chip = document.createElement('i');
+  chip.setAttribute('aria-hidden', 'true');
+  if (wax) chip.className = 'wax';
+  else chip.style.background = color;
+  span.appendChild(chip);
+  span.appendChild(document.createTextNode(name));
+  return span;
 }
 
 function syncHud() {
@@ -491,19 +512,23 @@ function drawBlob(box, mask, alpha, seed) {
   ctx.restore();
 }
 
-function pattern(bit, rx, ry) {
+function pattern(bit, rx, ry, ink) {
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,.75)';
-  ctx.fillStyle = 'rgba(255,255,255,.8)';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = ink || 'rgba(255,255,255,.9)';
+  ctx.fillStyle = ink || 'rgba(255,255,255,.92)';
+  ctx.lineWidth = ink ? 3 : 1.5;
+  if (ink) ctx.globalAlpha = 1;
   if (bit === 1) {
-    for (let y = -ry; y <= ry; y += 7) for (let x = -rx; x <= rx; x += 7) {
+    const step = ink ? 5 : 7;
+    const radius = ink ? 2.4 : 1.3;
+    for (let y = -ry; y <= ry; y += step) for (let x = -rx; x <= rx; x += step) {
       ctx.beginPath();
-      ctx.arc(x, y, 1.3, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
   } else if (bit === 2) {
-    for (let i = -rx - ry; i < rx + ry; i += 6) {
+    const step = ink ? 5 : 6;
+    for (let i = -rx - ry; i < rx + ry; i += step) {
       ctx.beginPath();
       ctx.moveTo(i, -ry);
       ctx.lineTo(i + ry * 2, ry);
@@ -512,7 +537,7 @@ function pattern(bit, rx, ry) {
   } else {
     ctx.beginPath();
     for (let x = -rx; x <= rx; x += 3) {
-      const y = Math.sin(x * 0.45) * ry * 0.35;
+      const y = Math.sin(x * 0.55) * ry * (ink ? 0.55 : 0.35);
       if (x === -rx) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
@@ -552,7 +577,7 @@ function drawPencil(box, mask) {
   ctx.stroke();
   if (blind) {
     ctx.clip();
-    paintBits(mask).forEach(function (bit) { pattern(bit, rx, ry); });
+    paintBits(mask).forEach(function (bit) { pattern(bit, rx, ry, '#1A120C'); });
   }
   ctx.restore();
 }
@@ -927,14 +952,30 @@ canvas.addEventListener('pointermove', function (event) {
 });
 
 function releaseOutside(event) {
-  if (!event) return false;
+  if (!event || !layout) return false;
+  const p = localPoint(event);
+  // Tabs sit just outside the paper, so the commit region is the sheet plus
+  // that reach. The button bar is below it. The outer pixels of the viewport
+  // are the screen edge: on a phone the paper nearly fills the width, and a
+  // tab-sized pad would otherwise swallow that edge.
+  if (p.x <= 2 || p.y <= 2 || p.x >= W - 2 || p.y >= H - 2) return true;
+  const bar = document.getElementById('bar').getBoundingClientRect();
   const rect = canvas.getBoundingClientRect();
-  return event.clientX < rect.left || event.clientY < rect.top || event.clientX > rect.right || event.clientY > rect.bottom;
+  const barTop = (bar.top - rect.top) * (H / rect.height);
+  const barBottom = (bar.bottom - rect.top) * (H / rect.height);
+  if (p.y >= barTop && p.y <= barBottom + 2) return true;
+  const reach = 32;
+  return p.x < layout.originX - reach || p.y < layout.originY - reach
+    || p.x > layout.originX + layout.sheetW + reach
+    || p.y > layout.originY + layout.sheetH + reach;
 }
+
+let releaseLog = null;
 
 function endDrag(event, cancel) {
   if (!drag || (event && event.pointerId !== drag.id)) return;
   const outside = !cancel && releaseOutside(event);
+  releaseLog = event ? { x: event.clientX, y: event.clientY, outside: outside || !!cancel } : null;
   const info = drag;
   drag = null;
   needPaint = true;
@@ -1088,6 +1129,36 @@ window.__fold = {
     const cell = document.querySelector('#stencil i');
     const box = cell.getBoundingClientRect();
     return Math.min(box.width, box.height);
+  },
+  sheetRect: function () {
+    return { x: layout.originX, y: layout.originY, w: layout.sheetW, h: layout.sheetH, W: W, H: H };
+  },
+  lastRelease: function () { return releaseLog; },
+  patternContrast: function () {
+    needPaint = true;
+    draw(nowMs());
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const scale = canvas.width / W;
+    let darkest = 255;
+    let dark = 0;
+    let samples = 0;
+    for (let i = 0; i < model.target.length; i++) {
+      if (model.target[i] <= 0 || shown[i] === model.target[i]) continue;
+      const box = cellBox(i);
+      const cx = box.x + box.w * 0.5;
+      const cy = box.y + box.h * 0.52;
+      for (let gy = -2; gy <= 2; gy++) for (let gx = -2; gx <= 2; gx++) {
+        const x = Math.round((cx + gx * box.w * 0.08) * scale);
+        const y = Math.round((cy + gy * box.h * 0.08) * scale);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+        const o = (y * canvas.width + x) * 4;
+        const lum = 0.2126 * img[o] + 0.7152 * img[o + 1] + 0.0722 * img[o + 2];
+        samples++;
+        if (lum < darkest) darkest = lum;
+        if (lum < 90) dark++;
+      }
+    }
+    return { darkest: darkest, dark: dark, samples: samples };
   },
   landscape: landscapeLocked,
   fastCommit: function (id) {
