@@ -15,6 +15,7 @@ const GAMES = [
   'sand-strata',
   'top-turner',
   'spillproof',
+  'foldprint',
 ];
 const PHONE = 390 / 844;
 

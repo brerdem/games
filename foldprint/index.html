@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#3B2A20" />
+<title>Foldprint</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%233B2A20'/%3E%3Crect x='3' y='2' width='10' height='12' fill='%23F7F1E3'/%3E%3Cpath d='M8 2 v12' stroke='%23C9BBA0' stroke-dasharray='1.2 1'/%3E%3C/svg%3E" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #2A1C14; overflow: hidden; }
+  body {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    color: #2A1C14;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * 390 / 844));
+    height: min(100dvh, calc(100vw * 844 / 390));
+    max-height: 100dvh;
+    background: #3B2A20;
+    overflow: hidden;
+    color: #F7F1E3;
+  }
+  @media (max-width: 520px), (max-height: 520px) {
+    #stage { width: 100vw; height: 100dvh; max-height: none; }
+  }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  button {
+    font-family: inherit;
+    color: #F7F1E3;
+    background: #2A1C14;
+    border: 1px solid #C9BBA0;
+    border-radius: 14px;
+    min-height: 48px;
+    min-width: 64px;
+    padding: 0 12px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .38; cursor: default; }
+  button.primary { background: #E63946; color: #fff; border-color: #E63946; }
+  #hud, #bar {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; z-index: 2; pointer-events: none;
+  }
+  #hud { top: 0; min-height: 92px; align-items: flex-start; }
+  #bar {
+    bottom: 0; min-height: 76px; justify-content: space-between;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  #hud button, #bar button, #hud .stamps { pointer-events: auto; }
+  #titles { flex: 1; min-width: 0; }
+  #kicker { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #E7D7B8; }
+  #name { font-size: 22px; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #lesson { font-size: 13px; color: #E7D7B8; min-height: 1em; }
+  .stamps { display: flex; gap: 4px; }
+  .stamp {
+    width: 18px; height: 22px; border-radius: 3px; background: #C4493A;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,.25);
+  }
+  .stamp.spent { background: transparent; box-shadow: none; border: 1px dashed #8C7560; }
+  #hint, #mute { width: 48px; padding: 0; }
+  .overlay {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    background: rgba(42, 28, 20, .72); padding: 18px;
+  }
+  .overlay.hidden { display: none; }
+  #rotate.overlay { z-index: 7; background: #2A1C14; }
+  .card {
+    width: min(320px, 100%); background: #F7F1E3; color: #2A1C14; border-radius: 18px;
+    padding: 18px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 26px; font-weight: 600; }
+  .card p { margin: 0 0 12px; line-height: 1.35; }
+  .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card button { color: #F7F1E3; }
+  #levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0 12px; }
+  #levels button { min-width: 0; padding: 0; }
+  #help { align-items: flex-end; }
+  #help .card { max-height: 70%; overflow: auto; }
+  #finger {
+    position: absolute; z-index: 3; width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(230, 57, 70, .35); border: 2px solid #E63946; pointer-events: none;
+  }
+  #finger.hidden { display: none; }
+  #letter {
+    position: absolute; z-index: 4; background: #2A1C14; color: #F7F1E3; border-radius: 8px;
+    padding: 4px 8px; pointer-events: none; font-size: 14px;
+  }
+  #letter.hidden { display: none; }
+  .stars { letter-spacing: .2em; color: #C4493A; font-size: 22px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="finger" class="hidden"></div>
+    <div id="letter" class="hidden"></div>
+    <header id="hud">
+      <div id="titles">
+        <div id="kicker">Sheet 1</div>
+        <div id="name">First Blot</div>
+        <div class="stamps" id="stamps"></div>
+        <div id="lesson"></div>
+      </div>
+      <button id="hint" type="button">Hint</button>
+      <button id="mute" type="button">Snd</button>
+    </header>
+    <footer id="bar">
+      <button id="undo" type="button">Undo</button>
+      <button id="fresh" type="button">Fresh</button>
+      <button id="press" type="button" disabled>Press</button>
+      <button id="menu" type="button">Menu</button>
+    </footer>
+    <div id="rotate" class="overlay hidden"><div class="card"><h2>Turn to portrait</h2><p>Foldprint is a tall sheet. Rotate the phone upright.</p></div></div>
+    <div id="menu-panel" class="overlay hidden">
+      <div class="card">
+        <h2>Sheets</h2>
+        <div id="levels"></div>
+        <div class="row">
+          <button id="how" type="button">How to fold</button>
+          <button id="blind" type="button">Patterns</button>
+          <button id="resume" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+    <div id="help" class="overlay hidden">
+      <div class="card">
+        <h2>How to fold</h2>
+        <p>Drag a crease tab across the dashed line. Paint on one side prints onto the other. Both sides keep every colour that touched.</p>
+        <p>Red and yellow make orange, yellow and blue make green, red and blue make purple. Paint never wipes off. A crease can be pressed again.</p>
+        <p>A print that lands off the pencil stencil is a smudge: the sheet springs back, and the press is still spent. Undo costs a press too.</p>
+        <p id="help-end">Wax cells refuse paint. Match the stencil before the stamps run out.</p>
+        <button id="help-close" type="button">Back</button>
+      </div>
+    </div>
+    <div id="confirm" class="overlay hidden">
+      <div class="card">
+        <h2>Fresh sheet?</h2>
+        <p>This start over is free. Presses and the hint come back.</p>
+        <div class="row">
+          <button id="confirm-yes" type="button">Fresh sheet</button>
+          <button id="confirm-no" type="button">Keep going</button>
+        </div>
+      </div>
+    </div>
+    <div id="win" class="overlay hidden">
+      <div class="card">
+        <h2>Hung to dry</h2>
+        <p class="stars" id="win-stars"></p>
+        <p id="win-copy"></p>
+        <div class="row">
+          <button id="win-next" type="button" class="primary">Next sheet</button>
+          <button id="win-retry" type="button">Fresh</button>
+          <button id="win-menu" type="button">Sheets</button>
+        </div>
+      </div>
+    </div>
+    <div id="stuck" class="overlay hidden">
+      <div class="card">
+        <h2>No clean fold left</h2>
+        <p>Every remaining press would smudge or change nothing.</p>
+        <div class="row">
+          <button id="stuck-undo" type="button">Undo</button>
+          <button id="stuck-fresh" type="button">Fresh sheet</button>
+        </div>
+      </div>
+    </div>
+    <div id="fail" class="overlay hidden">
+      <div class="card">
+        <h2>Out of presses</h2>
+        <p>The stamps are gone and the stencil is still open.</p>
+        <div class="row">
+          <button id="fail-fresh" type="button" class="primary">Fresh sheet</button>
+          <button id="fail-menu" type="button">Sheets</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
