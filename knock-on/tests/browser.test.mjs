@@ -363,6 +363,93 @@ test('a swipe on a selected domino follows the finger, and a second tap deselect
   }
 });
 
+test('arrow hits miss every other domino at 360, 390 and 430', async () => {
+  const browser = await launch();
+  try {
+    for (const [width, height] of [[360, 800], [390, 844], [430, 932]]) {
+      const context = await browser.newContext({ viewport: { width: width, height: height }, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      const session = await context.newCDPSession(page);
+      await page.goto(fileUrl);
+      await page.waitForFunction(() => window.__knock.ready);
+      await page.evaluate(() => window.__knock.dismiss());
+      const dominoes = [18, 19, 20, 21];
+      for (const index of dominoes) {
+        const at = await page.evaluate((i) => window.__knock.swipe(i, 1).from, index);
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const placed = await page.evaluate((selected) => {
+          function hit(a, b) {
+            return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+          }
+          const arrows = [...document.querySelectorAll('#arrows button')].map((btn) => btn.getBoundingClientRect());
+          const others = [18, 19, 20, 21].filter((i) => i !== selected).map((i) => window.__knock.cellBox(i));
+          return {
+            open: !document.getElementById('arrows').classList.contains('hidden'),
+            tall: arrows.every((box) => box.height >= 44 && box.width >= 44),
+            overlap: arrows.some((arrow) => others.some((cell) => hit(arrow, cell)))
+          };
+        }, index);
+        assert.equal(placed.open, true, width + ' select ' + index);
+        assert.equal(placed.tall, true, width + ' size ' + index);
+        assert.equal(placed.overlap, false, width + ' overlap ' + index);
+      }
+      const edge = await page.evaluate(() => {
+        const cell = window.__knock.cellBox(19);
+        return { x: cell.left + 6, y: (cell.top + cell.bottom) / 2 };
+      });
+      const before = await page.evaluate(() => window.__knock.snapshot().pushes);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: edge.x, y: edge.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      const after = await page.evaluate(() => window.__knock.snapshot().pushes);
+      assert.equal(after, before, width + ' neighbour');
+      if (width === 390) {
+        await page.evaluate(() => window.__knock.load(1));
+        await page.waitForFunction(() => window.__knock.ready);
+        const from = await page.evaluate(() => window.__knock.swipe(19, 3).from);
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y, id: 1 }] });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const west = await page.evaluate(() => {
+          const btn = [...document.querySelectorAll('#arrows button')].find((el) => el.dataset.dir === '3');
+          const box = btn.getBoundingClientRect();
+          return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: west.x, y: west.y, id: 1 }] });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: west.x - 80, y: west.y, id: 1 }] });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await page.waitForFunction(() => !window.__knock.animating(), null, { timeout: 8000 });
+        assert.equal(await page.evaluate(() => window.__knock.snapshot().pushes), 2);
+      }
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a late level shows loading until its pack is ready', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__knock.ready);
+    const mid = await page.evaluate(() => {
+      window.__knock.load(9);
+      return {
+        ready: window.__knock.ready,
+        loading: !document.getElementById('loading').classList.contains('hidden')
+      };
+    });
+    assert.equal(mid.ready, false);
+    assert.equal(mid.loading, true);
+    await page.waitForFunction(() => window.__knock.ready);
+    assert.equal(await page.evaluate(() => document.getElementById('loading').classList.contains('hidden')), true);
+    assert.equal(await page.evaluate(() => window.__knock.snapshot().pushes), 7);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('a used hint survives restart and reload, and that clear is not three stars', async () => {
   const browser = await launch();
   try {
@@ -422,7 +509,7 @@ test('startup at 6x has no task over 50ms', async () => {
       files: performance.getEntriesByType('resource').map((entry) => entry.name).filter((name) => /min\.js|pack\//.test(name))
     }));
     console.log(`knock-on startup gap ${measured.gap.toFixed(1)} ms long ${measured.long.toFixed(1)} ms files ${measured.files.join(' ')}`);
-    assert.ok(measured.files.every((name) => name.includes('pack/1.js')), measured.files.join(' '));
+    assert.ok(!measured.files.some((name) => name.includes('min.js')), measured.files.join(' '));
     assert.ok(measured.long < 100, 'long ' + measured.long);
     assert.ok(measured.gap < 200, 'gap ' + measured.gap);
   } finally {

@@ -104,6 +104,17 @@ R1 was REVISE at 76/100. The attached report is `QA_REPORT.md`. The previous rep
 
 Packed tables are 3,781,856 bytes in total. Level 9 is 1,276,430 bytes.
 
+## QA revision 3
+
+Burak approved one scoped pass on `fe8936f`. The R2 report is `QA_REPORT.md`. `QA_REPORT_R1.md` had been the R0 text; it is now the R1 report, and the R0 text is `QA_REPORT_R0.md`. Rules and the twelve levels are unchanged.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| KO-017 | Arrow hit areas sit in empty cells or the margin, never on another domino. A touch that does land on another domino selects that domino | `game.js` placeArrows, arrowDown | At 360×800, 390×844 and 430×932, every L1 arrow misses the other dominoes and is at least 44 px. A tap on the neighbour's edge spends nothing | PASS |
+| KO-018 | The next levels' packs preload while you play. Until the open table's pack is decoded, a "Setting the table" card blocks input | `game.js` preloadFrom, `#loading` | Jumping to L9 drops `ready` and shows the card, then both clear | PASS |
+| KO-019 | A drag of 24 px or more off an arrow commits that direction even when the finger ends outside the sheet | `game.js` arrowUp | A west drag from the west arrow of L1's second domino spends a push | PASS |
+| KO-020 | `__knock.ready` is false from the moment a level starts loading until its pack is decoded | `game.js` loadLevel | The same L9 jump reads `ready === false` before the card goes away | PASS |
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/knock-on/

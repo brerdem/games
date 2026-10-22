@@ -184,6 +184,8 @@
     anim = null;
     dust.length = 0;
     tableReady = false;
+    if (window.__knock) window.__knock.ready = false;
+    setLoading(true);
     const requested = levelNum;
     ensureMap(requested, function (map) {
       if (levelNum !== requested) return;
@@ -196,7 +198,9 @@
       oracleMs = nowMs() - t0;
       tableReady = true;
       window.__knock.ready = true;
+      setLoading(false);
       needPaint = true;
+      preloadFrom(requested + 1);
     });
     if (nowMs() >= inputLock) inputLock = 0;
     Object.keys(panels).forEach(function (key) { panels[key].classList.add('hidden'); });
@@ -300,6 +304,13 @@
     script.onload = start;
     document.body.appendChild(script);
   }
+  function preloadFrom(n) {
+    if (n > KL.LEVELS.length) return;
+    ensureMap(n, function () { preloadFrom(n + 1); });
+  }
+  function setLoading(on) {
+    document.getElementById('loading').classList.toggle('hidden', !on);
+  }
   function placeArrows() {
     if (!layout || selected == null || anim || state.won || state.reason === 'pushes' || overlayOpen()) {
       arrows.classList.add('hidden');
@@ -309,68 +320,90 @@
     const dirs = ch === 'H' ? [3, 1] : ch === 'V' ? [0, 2] : null;
     if (!dirs) { arrows.classList.add('hidden'); return; }
     arrows.classList.remove('hidden');
-    const size = 48;
-    const centers = [];
+    const forbidden = [];
     for (let i = 0; i < 48; i++) {
-      if (state.cells[i] === 'H' || state.cells[i] === 'V') {
-        const o = cellOrigin(i);
-        centers.push({ x: o.x + layout.cell / 2, y: o.y + layout.cell / 2 });
-      }
+      if (i === selected) continue;
+      if (state.cells[i] !== 'H' && state.cells[i] !== 'V') continue;
+      const o = cellOrigin(i);
+      forbidden.push({ x: o.x, y: o.y, w: layout.cell, h: layout.cell });
     }
     const stageBox = stage.getBoundingClientRect();
     document.querySelectorAll('#bar button, #hint, #mute').forEach(function (btn) {
       const box = btn.getBoundingClientRect();
-      centers.push({
-        x: (box.left + box.width / 2 - stageBox.left) * (W / stageBox.width),
-        y: (box.top + box.height / 2 - stageBox.top) * (H / stageBox.height)
+      forbidden.push({
+        x: (box.left - stageBox.left) * (W / stageBox.width),
+        y: (box.top - stageBox.top) * (H / stageBox.height),
+        w: box.width * (W / stageBox.width),
+        h: box.height * (H / stageBox.height)
       });
     });
-    function covers(rect) {
-      return centers.some(function (p) {
-        return p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+    function hits(rect) {
+      return forbidden.some(function (other) {
+        return rect.x < other.x + other.w && rect.x + rect.w > other.x && rect.y < other.y + other.h && rect.y + rect.h > other.y;
       });
     }
-    function spot(dir, index) {
+    function overlaps(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+    function pool(size) {
+      const spots = [];
       const s = layout.cell;
+      if (size <= s) {
+        const inset = (s - size) / 2;
+        for (let i = 0; i < 48; i++) {
+          if (state.cells[i] !== '.') continue;
+          const o = cellOrigin(i);
+          spots.push({ x: o.x + inset, y: o.y + inset, w: size, h: size });
+        }
+      }
+      const below = layout.originY + layout.sheetH;
+      const barTop = H - layout.bar;
+      if (barTop - below >= size + 4) {
+        spots.push({ x: 8, y: below + 4, w: size, h: size });
+        spots.push({ x: W - size - 8, y: below + 4, w: size, h: size });
+        spots.push({ x: (W - size) / 2, y: below + 4, w: size, h: size });
+      }
+      const above = layout.originY - size - 4;
+      if (above >= layout.hud) {
+        spots.push({ x: 8, y: above, w: size, h: size });
+        spots.push({ x: W - size - 8, y: above, w: size, h: size });
+      }
+      return spots.filter(function (rect) {
+        rect.x = Math.max(2, Math.min(W - rect.w - 2, rect.x));
+        rect.y = Math.max(2, Math.min(H - rect.h - 2, rect.y));
+        return !hits(rect);
+      });
+    }
+    const origin = cellOrigin(selected);
+    const cx = origin.x + layout.cell / 2;
+    const cy = origin.y + layout.cell / 2;
+    let chosen = null;
+    [48, 44].forEach(function (size) {
+      if (chosen) return;
+      const spots = pool(size).sort(function (a, b) {
+        const da = Math.hypot(a.x + a.w / 2 - cx, a.y + a.h / 2 - cy);
+        const db = Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy);
+        return da - db;
+      });
+      const picked = [];
+      spots.forEach(function (spot) {
+        if (picked.length === 2) return;
+        if (picked.some(function (other) { return overlaps(spot, other); })) return;
+        picked.push(spot);
+      });
+      if (picked.length === 2) chosen = picked;
+    });
+    if (!chosen) {
+      const s = Math.min(48, layout.cell);
       const o = cellOrigin(selected);
-      const cx = o.x + s / 2;
-      const cy = o.y + s / 2;
-      const ax = DX[dir];
-      const ay = DY[dir];
-      const px = -ay;
-      const py = ax;
-      const options = [];
-      for (let ring = 0; ring <= 4; ring++) {
-        const signs = ring === 0 ? [0] : [-1, 1];
-        signs.forEach(function (sign) {
-          options.push({
-            x: cx + ax * (s / 2 + size / 2 + 6) + px * sign * ring * 36 - size / 2,
-            y: cy + ay * (s / 2 + size / 2 + 6) + py * sign * ring * 36 - size / 2
-          });
-        });
-      }
-      const dockY = Math.max(layout.originY + layout.sheetH + 4, H - layout.bar - size - 6);
-      options.push({ x: index === 0 ? 8 : W - size - 8, y: dockY });
-      options.push({ x: W / 2 + (index === 0 ? -size - 6 : 6), y: dockY });
-      for (let n = 0; n < options.length; n++) {
-        const rect = {
-          x: Math.max(2, Math.min(W - size - 2, options[n].x)),
-          y: Math.max(2, Math.min(H - size - 2, options[n].y)),
-          w: size,
-          h: size
-        };
-        if (!covers(rect)) return rect;
-      }
-      return {
-        x: Math.max(2, Math.min(W - size - 2, index === 0 ? 8 : W - size - 8)),
-        y: Math.max(2, H - layout.bar + 4),
-        w: size,
-        h: Math.max(44, Math.min(size, layout.bar - 8))
-      };
+      chosen = [
+        { x: o.x + 2, y: o.y + 2, w: s / 2 - 3, h: s - 4 },
+        { x: o.x + s / 2 + 1, y: o.y + 2, w: s / 2 - 3, h: s - 4 }
+      ];
     }
     [arrowA, arrowB].forEach(function (btn, i) {
       const d = dirs[i];
-      const rect = spot(d, i);
+      const rect = chosen[i];
       btn.dataset.dir = String(d);
       btn.textContent = ARROW[d];
       btn.classList.toggle('hint', hintDir === d);
@@ -999,6 +1032,19 @@
   function arrowDown(event) {
     unlockAudio();
     if (boardBlocked() || selected == null) return;
+    const p = localPoint(event);
+    const under = cellAt(p.x, p.y);
+    if (under != null && under !== selected && (state.cells[under] === 'H' || state.cells[under] === 'V')) {
+      selected = under;
+      hintDir = null;
+      drag = { cell: under, x: p.x, y: p.y, ox: p.x, oy: p.y, id: event.pointerId, dir: null, retap: false };
+      arrows.classList.add('hidden');
+      try { canvas.setPointerCapture(event.pointerId); } catch (err) { /* synthetic */ }
+      event.preventDefault();
+      event.stopPropagation();
+      needPaint = true;
+      return;
+    }
     const d = +event.currentTarget.dataset.dir;
     arrowDrag = { id: event.pointerId, ox: event.clientX, oy: event.clientY, dir: d };
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch (err) { /* synthetic */ }
@@ -1038,9 +1084,11 @@
       return;
     }
     preview = null;
-    if (releaseOutside(event)) { needPaint = true; return; }
     const dir = axisDir(state.cells[selected], dx, dy);
-    if (dir != null && projection(dir, dx, dy) >= 24 && KL.canFall(state.cells, selected, dir)) doPush(selected, dir);
+    if (dir != null && projection(dir, dx, dy) >= 24) {
+      if (!KL.canFall(state.cells, selected, dir)) wobble(selected);
+      else doPush(selected, dir);
+    }
     needPaint = true;
   }
   arrowA.addEventListener('pointerdown', arrowDown);
