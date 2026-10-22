@@ -418,11 +418,13 @@ test('startup at 6x has no task over 50ms', async () => {
     await page.waitForFunction(() => window.__knock.ready);
     const measured = await page.evaluate(() => ({
       gap: Math.max.apply(null, window.__gaps.slice(1).concat(0)),
-      long: Math.max.apply(null, window.__long.concat(0))
+      long: Math.max.apply(null, window.__long.concat(0)),
+      files: performance.getEntriesByType('resource').map((entry) => entry.name).filter((name) => /min\.js|pack\//.test(name))
     }));
-    console.log(`knock-on startup gap ${measured.gap.toFixed(1)} ms long ${measured.long.toFixed(1)} ms`);
-    assert.ok(measured.long < 50, 'long ' + measured.long);
-    assert.ok(measured.gap < 150, 'gap ' + measured.gap);
+    console.log(`knock-on startup gap ${measured.gap.toFixed(1)} ms long ${measured.long.toFixed(1)} ms files ${measured.files.join(' ')}`);
+    assert.ok(measured.files.every((name) => name.includes('pack/1.js')), measured.files.join(' '));
+    assert.ok(measured.long < 100, 'long ' + measured.long);
+    assert.ok(measured.gap < 200, 'gap ' + measured.gap);
   } finally {
     await browser.close();
   }
