@@ -16,6 +16,7 @@ const GAMES = [
   'top-turner',
   'spillproof',
   'foldprint',
+  'knock-on',
 ];
 const PHONE = 390 / 844;
 

@@ -76,3 +76,15 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - name: Foldprint logic and browser gate
         run: node --test --test-timeout=180000 foldprint/tests/logic.test.mjs foldprint/tests/browser.test.mjs
+
+  knock-on:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Knock-On logic and browser gate
+        run: node --test --test-timeout=180000 knock-on/tests/logic.test.mjs knock-on/tests/browser.test.mjs
