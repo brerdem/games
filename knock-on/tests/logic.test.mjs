@@ -100,6 +100,18 @@ test('an illegal push spends nothing, L1 middle-east is stuck, and out of pushes
   assert.equal(K.undo(state, minF).ok, false);
 });
 
+test('undo keeps a used hint', () => {
+  const level = K.LEVELS[0];
+  const minF = K.makeMin(level.cells);
+  const state = K.fresh(level);
+  K.commit(state, 3 * 6 + 2, 1, minF);
+  state.hintUsed = true;
+  const back = K.undo(state, minF);
+  assert.equal(back.ok, true);
+  assert.equal(state.hintUsed, true);
+  assert.equal(state.cells.join(''), level.cells.join(''));
+});
+
 test('three stars need par pushes with no undo and no hint', () => {
   const level = K.LEVELS[0];
   const minF = K.makeMin(level.cells);

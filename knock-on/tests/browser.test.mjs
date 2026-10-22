@@ -117,6 +117,7 @@ test('stuck, out of pushes, undo, arrows, and a release over the bar spend nothi
     assert.ok(atEdge.at.x > places.edge.x - 8, JSON.stringify(atEdge.at));
     await swipe(page, session, 20, 1);
     await page.waitForSelector('#stuck:not(.hidden)');
+    await page.waitForTimeout(400);
     assert.equal(await page.evaluate(() => window.__knock.snapshot().pushes), 2);
     const stuckMs = await page.evaluate(() => window.__knock.stuckMs());
     assert.ok(stuckMs < 50, 'stuck ' + stuckMs);
@@ -126,6 +127,7 @@ test('stuck, out of pushes, undo, arrows, and a release over the bar spend nothi
     const outcome = await page.evaluate(() => window.__knock.fastCommit(20, 1));
     assert.equal(outcome, 'pushes');
     await page.waitForSelector('#fail:not(.hidden)');
+    await page.waitForTimeout(400);
     const box = await page.locator('#fail-restart').boundingBox();
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
@@ -137,6 +139,7 @@ test('stuck, out of pushes, undo, arrows, and a release over the bar spend nothi
     assert.equal(after.pushes, 3);
     assert.equal(after.won, false);
     await page.evaluate(() => window.__knock.fastCommit(18, 1));
+    await page.waitForTimeout(400);
     const next = await page.locator('#win-next').boundingBox();
     const nx = next.x + next.width / 2;
     const ny = next.y + next.height / 2;
@@ -262,6 +265,137 @@ test('landscape shows only the rotate card', async () => {
     const before = await page.evaluate(() => window.__knock.snapshot().pushes);
     await page.touchscreen.tap(200, 200);
     assert.equal(await page.evaluate(() => window.__knock.snapshot().pushes), before);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('arrows stay inside the tapped cell and a neighbour touch does not push it', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=3');
+    await page.waitForFunction(() => window.__knock.ready);
+    await page.evaluate(() => window.__knock.dismiss());
+    const tap = await page.evaluate(() => window.__knock.swipe(47, 0));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tap.from.x, y: tap.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const placed = await page.evaluate(() => {
+      const arrows = [...document.querySelectorAll('#arrows button')];
+      const cell = window.__knock.cellBox(47);
+      return {
+        open: !document.getElementById('arrows').classList.contains('hidden'),
+        inside: arrows.every((btn) => {
+          const box = btn.getBoundingClientRect();
+          return box.left >= cell.left - 1 && box.top >= cell.top - 1 && box.right <= cell.right + 1 && box.bottom <= cell.bottom + 1;
+        })
+      };
+    });
+    assert.equal(placed.open, true);
+    assert.equal(placed.inside, true);
+    const above = await page.evaluate(() => window.__knock.swipe(41, 0));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: above.from.x, y: above.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    assert.equal(await page.evaluate(() => window.__knock.snapshot().pushes), 5);
+    const start = await page.evaluate(() => window.__knock.swipe(30, 1));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start.from.x, y: start.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.from.x + 8, y: start.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    assert.equal(await page.evaluate(() => document.getElementById('arrows').classList.contains('hidden')), true);
+    const before = await page.evaluate(() => window.__knock.snapshot().cells.join(''));
+    await swipe(page, session, 31, 3);
+    const after = await page.evaluate((start) => {
+      const got = window.__knock.snapshot().cells.join('');
+      const west = window.KnockLogic.push(start.split(''), 31, 3).g.join('');
+      const east = window.KnockLogic.push(start.split(''), 30, 1).g.join('');
+      return { got: got, west: west, east: east };
+    }, before);
+    assert.equal(after.got, after.west);
+    assert.notEqual(after.got, after.east);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a cascade skip does not press the panel it opens, and undo keeps the hint', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=9');
+    await page.waitForFunction(() => window.__knock.ready);
+    await page.evaluate(() => window.__knock.dismiss());
+    const g = await page.evaluate(() => window.__knock.swipe(17, 2));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: g.from.x, y: g.from.y, id: 1 }] });
+    for (let i = 1; i <= 4; i++) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: g.from.x, y: g.from.y + (g.to.y - g.from.y) * (i / 4), id: 1 }]
+      });
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(600);
+    const center = await page.evaluate(() => {
+      const stage = document.getElementById('stage').getBoundingClientRect();
+      return { x: stage.left + stage.width / 2, y: stage.top + stage.height / 2 };
+    });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: center.x, y: center.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForFunction(() => !window.__knock.animating(), null, { timeout: 8000 });
+    const stuck = await page.evaluate(() => ({
+      open: !document.getElementById('stuck').classList.contains('hidden'),
+      pushes: window.__knock.snapshot().pushes,
+      kicker: document.getElementById('kicker').textContent
+    }));
+    assert.equal(stuck.open, true);
+    assert.equal(stuck.pushes, 6);
+    assert.equal(stuck.kicker, 'Table 9');
+    await page.goto(fileUrl + '?level=8');
+    await page.waitForFunction(() => window.__knock.ready);
+    await page.evaluate(() => window.__knock.fastCommit(4, 2));
+    await page.click('#hint');
+    assert.equal(await page.textContent('#hint'), 'Used');
+    assert.equal(await page.evaluate(() => document.querySelectorAll('#arrows button.hint').length), 1);
+    await page.click('#undo');
+    assert.equal(await page.textContent('#hint'), 'Used');
+    assert.equal(await page.evaluate(() => window.__knock.snapshot().hint), true);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('opening and restarting L9 stays under a 80ms frame at 4x', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__knock.ready);
+    await session.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await page.evaluate(() => {
+      window.__gaps = [];
+      let last = performance.now();
+      function tick(now) {
+        window.__gaps.push(now - last);
+        last = now;
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    await page.evaluate(() => { window.__gaps.length = 0; window.__knock.load(9); });
+    await page.waitForTimeout(350);
+    const opened = await page.evaluate(() => Math.max.apply(null, window.__gaps));
+    await page.evaluate(() => { window.__gaps.length = 0; });
+    await page.click('#restart');
+    await page.waitForTimeout(350);
+    const restarted = await page.evaluate(() => Math.max.apply(null, window.__gaps));
+    console.log(`knock-on L9 frame ${opened.toFixed(1)} ms open, ${restarted.toFixed(1)} ms restart`);
+    assert.ok(opened < 80, 'open ' + opened);
+    assert.ok(restarted < 80, 'restart ' + restarted);
   } finally {
     await browser.close();
   }

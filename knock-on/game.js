@@ -80,7 +80,11 @@
     if (!el.classList.contains('hidden')) inputLock = nowMs() + 340;
     el.classList.add('hidden');
   }
-  function show(el) { el.classList.remove('hidden'); }
+  let panelLock = 0;
+  function show(el) {
+    el.classList.remove('hidden');
+    panelLock = nowMs() + 340;
+  }
   function syncRotate() {
     document.getElementById('rotate').classList.toggle('hidden', !landscapeLocked());
   }
@@ -177,7 +181,8 @@
     anim = null;
     dust.length = 0;
     const t0 = nowMs();
-    minF = KL.makeMin(state.cells);
+    minF = minFor(levelNum);
+    minF(state.cells);
     oracleMs = nowMs() - t0;
     if (nowMs() >= inputLock) inputLock = 0;
     Object.keys(panels).forEach(function (key) { panels[key].classList.add('hidden'); });
@@ -236,6 +241,14 @@
     return { x: rect.left + p.x * (rect.width / W), y: rect.top + p.y * (rect.height / H) };
   }
 
+  function minFor(n) {
+    const table = window.KnockMin && window.KnockMin[n];
+    if (!table) return KL.makeMin(KL.LEVELS[n - 1].cells);
+    return function (g) {
+      const v = table[g.join('')];
+      return v == null || v >= 99 ? Infinity : v;
+    };
+  }
   function placeArrows() {
     if (!layout || selected == null || anim || state.won || state.reason === 'pushes' || overlayOpen()) {
       arrows.classList.add('hidden');
@@ -247,23 +260,23 @@
     arrows.classList.remove('hidden');
     const origin = cellOrigin(selected);
     const s = layout.cell;
-    const cx = origin.x + s / 2;
-    const cy = origin.y + s / 2;
+    const horizontal = ch === 'H';
+    const bw = Math.max(16, Math.floor((s - 6) / 2));
+    const bh = Math.max(16, s - 8);
     [arrowA, arrowB].forEach(function (btn, i) {
       const d = dirs[i];
       btn.dataset.dir = String(d);
       btn.textContent = ARROW[d];
-      let x = cx + DX[d] * (s * 0.5 + 26) - 24;
-      let y = cy + DY[d] * (s * 0.5 + 26) - 24;
-      x = Math.max(4, Math.min(W - 52, x));
-      y = Math.max(4, Math.min(H - 52, y));
-      const coversCenter = x <= cx && cx <= x + 48 && y <= cy && cy <= y + 48;
-      if (coversCenter) {
-        if (DX[d] !== 0) y = Math.max(4, Math.min(H - 52, origin.y - 52));
-        else x = Math.max(4, Math.min(W - 52, origin.x - 52));
-      }
+      btn.classList.toggle('hint', hintDir === d);
+      const width = horizontal ? bw : bh;
+      const height = horizontal ? bh : bw;
+      const x = origin.x + (horizontal ? (d === 3 ? 2 : s - bw - 2) : 4);
+      const y = origin.y + (horizontal ? 4 : (d === 0 ? 2 : s - bw - 2));
       btn.style.left = x + 'px';
       btn.style.top = y + 'px';
+      btn.style.width = width + 'px';
+      btn.style.height = height + 'px';
+      btn.style.fontSize = Math.max(14, Math.floor(s * 0.28)) + 'px';
     });
   }
 
@@ -366,8 +379,9 @@
     document.getElementById('win-stars').textContent = stars === 3 ? '\u2605\u2605\u2605' : stars === 2 ? '\u2605\u2605\u2606' : '\u2605\u2606\u2606';
     document.getElementById('win-copy').textContent = 'Par is ' + level.par + '. You used ' + state.used + (state.hintUsed ? ', with a hint.' : '.');
     show(panels.win);
-    document.getElementById('win-next').disabled = levelNum >= 12;
-    document.getElementById('win-next').focus();
+    const nextBtn = document.getElementById('win-next');
+    nextBtn.disabled = levelNum >= 12;
+    (nextBtn.disabled ? document.getElementById('win-retry') : nextBtn).focus();
     chime();
   }
   function openStuck() {
@@ -397,10 +411,15 @@
     if (state.hintUsed || state.won || state.reason === 'pushes' || anim) return;
     state.hintUsed = true;
     const mv = KL.hintMove(state.cells, minF);
-    if (!mv) lessonEl.textContent = "This table can't be finished.";
-    else {
+    if (!mv) {
+      lessonEl.textContent = "This table can't be finished.";
+      selected = null;
+      hintDir = null;
+      preview = null;
+    } else {
       selected = mv[0];
       hintDir = mv[1];
+      preview = KL.push(state.cells, mv[0], mv[1]);
       lessonEl.textContent = 'Try the highlighted domino.';
       if (!muted) blip(660);
     }
@@ -489,30 +508,30 @@
     drawPips(cx, cy, kind === 'H');
     ctx.restore();
   }
-  function drawFlat(i, dir, alpha) {
+  function drawFlat(i, dir, alpha, span) {
     const o = cellOrigin(i);
     const s = layout.cell;
-    const cx = o.x + s / 2 + DX[dir] * s * 0.28;
-    const cy = o.y + s / 2 + DY[dir] * s * 0.28;
+    const reach = span ? s * 0.5 : s * 0.12;
+    const len = span ? s * 1.22 : s * 0.7;
+    const cx = o.x + s / 2 + DX[dir] * reach;
+    const cy = o.y + s / 2 + DY[dir] * reach;
     ctx.save();
     ctx.globalAlpha = alpha == null ? 1 : alpha;
-    ctx.fillStyle = 'rgba(0,0,0,.2)';
-    drawPlank(cx + 2, cy + 3, dir, s * 0.95, s * 0.3, 'rgba(0,0,0,.2)');
-    drawPlank(cx, cy, dir, s * 0.95, s * 0.3, '#F4EEDF');
+    drawPlank(cx + 2, cy + 3, dir, len, s * 0.28, 'rgba(0,0,0,.2)');
+    drawPlank(cx, cy, dir, len, s * 0.28, '#F4EEDF');
     ctx.restore();
   }
-  function drawTail(i, dir) {
+  function drawTailMark(i) {
     const o = cellOrigin(i);
     const s = layout.cell;
     ctx.save();
     ctx.strokeStyle = '#EF476F';
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = 2;
     ctx.setLineDash([3, 3]);
-    roundRect(ctx, o.x + 5, o.y + 5, s - 10, s - 10, 6);
+    roundRect(ctx, o.x + 8, o.y + 8, s - 16, s - 16, 6);
     ctx.stroke();
     ctx.restore();
-    drawFlat(i, dir, 0.95);
   }
   function drawWall(i) {
     const o = cellOrigin(i);
@@ -565,10 +584,26 @@
   function drawPin(i) {
     const o = cellOrigin(i);
     const s = layout.cell;
+    const x = o.x + s * 0.7;
+    const y = o.y + s * 0.34;
+    ctx.save();
+    ctx.translate(x, y);
     ctx.fillStyle = '#EF476F';
+    ctx.strokeStyle = '#2A1C12';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(o.x + s - 10, o.y + 10, 5, 0, Math.PI * 2);
+    ctx.arc(0, -8, 8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -8, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#F4EEDF';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 16);
+    ctx.stroke();
+    ctx.restore();
   }
   function drawCell(i, poseItem, alpha, wobbleX) {
     const item = poseItem || { kind: 'floor' };
@@ -576,8 +611,13 @@
     else if (item.kind === 'elbow') drawElbow(i, item.piece);
     else if (item.kind === 'split') drawSplit(i, item.piece);
     else if (item.kind === 'H' || item.kind === 'V') drawStanding(i, item.kind, alpha, wobbleX);
-    else if (item.kind === 'flat') drawFlat(i, item.dir == null ? 1 : item.dir, alpha);
-    else if (item.kind === 'tail') drawTail(i, item.dir == null ? 1 : item.dir);
+    else if (item.kind === 'flat') {
+      const dir = item.dir == null ? 1 : item.dir;
+      const nx = i % 6 + DX[dir];
+      const ny = (i / 6 | 0) + DY[dir];
+      const next = nx >= 0 && ny >= 0 && nx < 6 && ny < 8 ? pose[ny * 6 + nx] : null;
+      drawFlat(i, dir, alpha, !!(next && next.kind === 'tail'));
+    } else if (item.kind === 'tail') drawTailMark(i);
   }
   function eventAt(log, i) {
     for (let n = log.length - 1; n >= 0; n--) if (log[n][2] === i) return log[n];
@@ -589,7 +629,10 @@
       const pos = event[2];
       const dir = event[3];
       if (kind === 'fall' || kind === 'turn' || kind === 'split') {
-        drawFlat(pos, dir, 0.4);
+        const tx = pos % 6 + DX[dir];
+        const ty = (pos / 6 | 0) + DY[dir];
+        const spans = tx >= 0 && ty >= 0 && tx < 6 && ty < 8 && result.g[ty * 6 + tx] === '~';
+        drawFlat(pos, dir, 0.4, spans);
         const x = pos % 6 + DX[dir];
         const y = (pos / 6 | 0) + DY[dir];
         if (x >= 0 && y >= 0 && x < 6 && y < 8 && result.g[y * 6 + x] === '~') {
@@ -769,23 +812,37 @@
     if (!drag || (event && event.pointerId !== drag.id)) return;
     const info = drag;
     drag = null;
+    if (info.skip) { finishAnim(); return; }
     const outside = !cancel && releaseOutside(event);
     releaseLog = event ? { x: event.clientX, y: event.clientY, outside: !!(cancel || outside) } : null;
-    preview = null;
+    const point = event ? localPoint(event) : { x: info.x, y: info.y };
+    const dx = point.x - info.ox;
+    const dy = point.y - info.oy;
+    const moved = Math.hypot(dx, dy) >= 8;
     needPaint = true;
-    if (cancel || outside || boardBlocked()) { placeArrows(); return; }
-    const dx = (event ? localPoint(event).x : info.x) - info.ox;
-    const dy = (event ? localPoint(event).y : info.y) - info.oy;
-    const dir = info.dir;
-    if (dir == null || projection(dir, dx, dy) < 24) { placeArrows(); return; }
-    if (!KL.canFall(state.cells, info.cell, dir)) { wobble(info.cell); return; }
-    if (navigator.vibrate) navigator.vibrate(8);
-    doPush(info.cell, dir);
+    if (cancel || outside || boardBlocked() || moved) {
+      selected = null;
+      hintDir = null;
+      preview = null;
+      syncHud();
+      if (cancel || outside || boardBlocked()) return;
+      if (info.dir == null || projection(info.dir, dx, dy) < 24) return;
+      if (!KL.canFall(state.cells, info.cell, info.dir)) { wobble(info.cell); return; }
+      if (navigator.vibrate) navigator.vibrate(8);
+      doPush(info.cell, info.dir);
+      return;
+    }
+    syncHud();
   }
 
   canvas.addEventListener('pointerdown', function (event) {
     unlockAudio();
-    if (anim && anim.phase !== 'wobble' && nowMs() - anim.t0 > 500) { finishAnim(); return; }
+    if (anim && anim.phase !== 'wobble' && nowMs() - anim.t0 > 500) {
+      drag = { skip: true, id: event.pointerId };
+      try { canvas.setPointerCapture(event.pointerId); } catch (err) { /* synthetic */ }
+      event.preventDefault();
+      return;
+    }
     if (boardBlocked()) return;
     const p = localPoint(event);
     const cell = cellAt(p.x, p.y);
@@ -843,8 +900,22 @@
   arrowB.addEventListener('pointerup', arrowUp);
   arrowA.addEventListener('pointerenter', arrowDown);
   arrowB.addEventListener('pointerenter', arrowDown);
-  arrowA.addEventListener('pointerleave', function () { preview = null; needPaint = true; });
-  arrowB.addEventListener('pointerleave', function () { preview = null; needPaint = true; });
+  function clearArrowPreview() {
+    if (hintDir == null) preview = null;
+    needPaint = true;
+  }
+  arrowA.addEventListener('pointerleave', clearArrowPreview);
+  arrowB.addEventListener('pointerleave', clearArrowPreview);
+  function swallowFreshPanel(event) {
+    if (nowMs() >= panelLock) return;
+    if (event.target.closest && event.target.closest('.overlay')) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+  stage.addEventListener('pointerdown', swallowFreshPanel, true);
+  stage.addEventListener('pointerup', swallowFreshPanel, true);
+  stage.addEventListener('click', swallowFreshPanel, true);
 
   document.getElementById('undo').addEventListener('click', function () { unlockAudio(); doUndo(); });
   document.getElementById('restart').addEventListener('click', function () {
@@ -886,6 +957,10 @@
   window.addEventListener('keydown', function (event) {
     unlockAudio();
     if (event.key === 'Escape') {
+      if (!panels.win.classList.contains('hidden')) {
+        (document.getElementById('win-next').disabled ? document.getElementById('win-retry') : document.getElementById('win-next')).focus();
+        return;
+      }
       if (overlayOpen()) Object.keys(panels).forEach(function (key) { hide(panels[key]); });
       else { renderLevels(); show(panels.menu); }
       return;
@@ -893,7 +968,11 @@
     if (overlayOpen() || anim) return;
     if (event.key === 'z' || event.key === 'Z') { doUndo(); return; }
     if (event.key === 'h' || event.key === 'H') { doHint(); return; }
-    if (event.key === 'r' || event.key === 'R') { show(panels.confirm); return; }
+    if (event.key === 'r' || event.key === 'R') {
+      if (state.used > 0 && !state.won) show(panels.confirm);
+      else loadLevel(levelNum);
+      return;
+    }
     const keyDir = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[event.key];
     if (keyDir == null) return;
     if (event.shiftKey && selected != null) {
@@ -949,6 +1028,15 @@
     },
     lastRelease: function () { return releaseLog; },
     dismiss: function () { finger.classList.add('hidden'); lessonEl.textContent = ''; },
+    cellBox: function (i) {
+      const o = cellOrigin(i);
+      const rect = canvas.getBoundingClientRect();
+      const scale = rect.width / W;
+      const x = rect.left + o.x * scale;
+      const y = rect.top + o.y * (rect.height / H);
+      const s = layout.cell * scale;
+      return { left: x, top: y, right: x + s, bottom: y + s };
+    },
     swipe: function (p, d) {
       const o = cellOrigin(p);
       const s = layout.cell;

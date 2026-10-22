@@ -73,6 +73,23 @@ Unverified: the haptic tick on a real phone, and whether a person can read the t
 
 Repro: `node --test --test-timeout=180000 knock-on/tests/logic.test.mjs knock-on/tests/browser.test.mjs`
 
+## QA revision 1
+
+R0 was REVISE at 71/100 (`QA_REPORT.md`). Rules and the twelve levels are unchanged.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| KO-001 | Arrows appear only after a tap with less than 8 px of movement. They sit inside that cell. A touch on another domino selects or swipes that domino | `game.js` placeArrows, endDrag | L3: a tap's arrows stay inside the cell, and a tap on the domino above spends nothing. An 8 px drag shows no arrows, and the next swipe pushes the neighbour | PASS |
+| KO-002 | A cascade skip finishes on pointer-up, and a panel ignores input for 340 ms after it opens | `game.js` show, endDrag | L9's stuck cascade, tapped at 600 ms over the centre, still shows the banner with 6 pushes left | PASS |
+| KO-003 | Undo no longer copies `hintUsed` back from the snapshot. Restart is the reset | `logic.js` undo | After Hint and Undo the button stays Used | PASS |
+| KO-004 | Minimum pushes are a shipped table, one object per level. Opening and restarting do not search | `min.js`, `game.js` minFor | L9 at 4× CPU: largest frame 16.8 ms on open and 50.0 ms on restart | PASS |
+| KO-005 | The hint paints the chosen direction, marks that arrow, and shows the ghost of the push | `game.js` doHint, placeArrows | The hinted arrow uses the gold hint style and the preview is that push | PASS |
+| KO-006 | A tail is the far half of the one fallen plank, plus the dashed taken-cell mark. It is not a second domino | `game.js` drawFlat, drawTailMark | L1 after the third domino falls shows one plank per fall | PASS |
+| KO-007 | The pinned marker is a pin with a head and a stem, about 24 px tall | `game.js` drawPin | Visible on the domino the stuck push leaves behind | PASS |
+| KO-008 | On the last table the win panel focuses Retry. Escape leaves that panel open | `game.js` openWin, keydown | Focus and Escape | PASS |
+| KO-009 | Arrows are clipped to the selected cell, so they do not meet the button bar | `game.js` placeArrows | The L3 arrow boxes lie inside the cell at 390 | PASS |
+| KO-010 | R restarts immediately when no push has been spent, and confirms after one has | `game.js` keydown | Same rule as the Restart button | PASS |
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/knock-on/

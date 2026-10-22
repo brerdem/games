@@ -187,11 +187,13 @@
       return best;
     }
     f(g0.slice());
-    return function (g) {
+    function lookup(g) {
       var k = g.join('');
       if (memo.has(k)) return memo.get(k);
       return f(g);
-    };
+    }
+    lookup.entries = memo;
+    return lookup;
   }
   function pinned(g) {
     var n = 0;
@@ -474,7 +476,6 @@
     if (!state.history.length || state.pushesLeft <= 0 || state.won || state.reason === 'pushes') return { ok: false };
     var prev = state.history.pop();
     state.cells = prev.cells;
-    state.hintUsed = prev.hintUsed;
     state.undos = prev.undos + 1;
     state.used = prev.used + 2;
     state.pushesLeft = prev.pushesLeft - 2;
