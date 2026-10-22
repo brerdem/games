@@ -285,16 +285,20 @@ test('arrows stay inside the tapped cell and a neighbour touch does not push it'
     const placed = await page.evaluate(() => {
       const arrows = [...document.querySelectorAll('#arrows button')];
       const cell = window.__knock.cellBox(47);
+      const cx = (cell.left + cell.right) / 2;
+      const cy = (cell.top + cell.bottom) / 2;
       return {
         open: !document.getElementById('arrows').classList.contains('hidden'),
-        inside: arrows.every((btn) => {
+        tall: arrows.every((btn) => btn.getBoundingClientRect().height >= 44),
+        clear: arrows.every((btn) => {
           const box = btn.getBoundingClientRect();
-          return box.left >= cell.left - 1 && box.top >= cell.top - 1 && box.right <= cell.right + 1 && box.bottom <= cell.bottom + 1;
+          return cx < box.left - 1 || cx > box.right + 1 || cy < box.top - 1 || cy > box.bottom + 1;
         })
       };
     });
     assert.equal(placed.open, true);
-    assert.equal(placed.inside, true);
+    assert.equal(placed.tall, true);
+    assert.equal(placed.clear, true);
     const above = await page.evaluate(() => window.__knock.swipe(41, 0));
     await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: above.from.x, y: above.from.y, id: 1 }] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -314,6 +318,111 @@ test('arrows stay inside the tapped cell and a neighbour touch does not push it'
     }, before);
     assert.equal(after.got, after.west);
     assert.notEqual(after.got, after.east);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a swipe on a selected domino follows the finger, and a second tap deselects', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__knock.ready);
+    await page.evaluate(() => window.__knock.dismiss());
+    const center = await page.evaluate(() => window.__knock.swipe(18, 1));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: center.from.x, y: center.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: center.from.x, y: center.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const cleared = await page.evaluate(() => ({
+      pushes: window.__knock.snapshot().pushes,
+      hidden: document.getElementById('arrows').classList.contains('hidden')
+    }));
+    assert.equal(cleared.pushes, 3);
+    assert.equal(cleared.hidden, true);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: center.from.x, y: center.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const west = await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('#arrows button')].find((el) => el.dataset.dir === '3');
+      const box = btn.getBoundingClientRect();
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2, h: box.height };
+    });
+    assert.ok(west.h >= 44);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: west.x, y: west.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: west.x + 80, y: west.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForFunction(() => !window.__knock.animating(), null, { timeout: 8000 });
+    const snap = await page.evaluate(() => window.__knock.snapshot());
+    assert.equal(snap.won, true);
+    assert.equal(snap.pushes, 2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a used hint survives restart and reload, and that clear is not three stars', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__knock.ready);
+    await page.click('#hint');
+    assert.equal(await page.textContent('#hint'), 'Used');
+    await page.click('#restart');
+    await page.waitForFunction(() => window.__knock.ready);
+    assert.equal(await page.textContent('#hint'), 'Used');
+    await page.reload();
+    await page.waitForFunction(() => window.__knock.ready);
+    assert.equal(await page.textContent('#hint'), 'Used');
+    await page.evaluate(() => window.__knock.fastCommit(18, 1));
+    const snap = await page.evaluate(() => window.__knock.snapshot());
+    assert.equal(snap.won, true);
+    assert.notEqual(snap.stars, 3);
+    assert.match(await page.textContent('#win-copy'), /hint/);
+    await page.click('#win-retry');
+    await page.waitForFunction(() => window.__knock.ready);
+    assert.equal(await page.textContent('#hint'), 'Hint');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('startup at 6x has no task over 50ms', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.addInitScript(() => {
+      window.__gaps = [];
+      window.__long = [];
+      let last = performance.now();
+      function tick(now) {
+        window.__gaps.push(now - last);
+        last = now;
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      try {
+        new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => window.__long.push(entry.duration));
+        }).observe({ entryTypes: ['longtask'] });
+      } catch (err) { /* long tasks are not observable here */ }
+    });
+    await session.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+    await page.goto(fileUrl);
+    await page.waitForFunction(() => window.__knock.ready);
+    const measured = await page.evaluate(() => ({
+      gap: Math.max.apply(null, window.__gaps.slice(1).concat(0)),
+      long: Math.max.apply(null, window.__long.concat(0))
+    }));
+    console.log(`knock-on startup gap ${measured.gap.toFixed(1)} ms long ${measured.long.toFixed(1)} ms`);
+    assert.ok(measured.long < 50, 'long ' + measured.long);
+    assert.ok(measured.gap < 150, 'gap ' + measured.gap);
   } finally {
     await browser.close();
   }

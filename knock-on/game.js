@@ -73,17 +73,18 @@
   function landscapeLocked() {
     return window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches;
   }
+  let tableReady = false;
   function boardBlocked() {
-    return overlayOpen() || landscapeLocked() || nowMs() < inputLock || !!anim;
+    return !tableReady || overlayOpen() || landscapeLocked() || nowMs() < inputLock || !!anim;
   }
   function hide(el) {
     if (!el.classList.contains('hidden')) inputLock = nowMs() + 340;
     el.classList.add('hidden');
   }
   let panelLock = 0;
-  function show(el) {
+  function show(el, fromSkip) {
     el.classList.remove('hidden');
-    panelLock = nowMs() + 340;
+    if (fromSkip) panelLock = nowMs() + 340;
   }
   function syncRotate() {
     document.getElementById('rotate').classList.toggle('hidden', !landscapeLocked());
@@ -97,10 +98,11 @@
         stars: raw.stars || {},
         unlocked: raw.unlocked || 1,
         mute: !!raw.mute,
-        parSeen: raw.parSeen || {}
+        parSeen: raw.parSeen || {},
+        hinted: raw.hinted || {}
       };
     } catch (err) {
-      return { stars: {}, unlocked: 1, mute: false, parSeen: {} };
+      return { stars: {}, unlocked: 1, mute: false, parSeen: {}, hinted: {} };
     }
   }
   function saveProgress() {
@@ -170,6 +172,7 @@
     levelNum = Math.max(1, Math.min(KL.LEVELS.length, n));
     level = KL.LEVELS[levelNum - 1];
     state = KL.fresh(level);
+    state.hintUsed = !!(progress.hinted && progress.hinted[levelNum]);
     pose = basePose(state.cells);
     poseStack = [];
     fellMarks = [];
@@ -180,10 +183,21 @@
     preview = null;
     anim = null;
     dust.length = 0;
-    const t0 = nowMs();
-    minF = minFor(levelNum);
-    minF(state.cells);
-    oracleMs = nowMs() - t0;
+    tableReady = false;
+    const requested = levelNum;
+    ensureMap(requested, function (map) {
+      if (levelNum !== requested) return;
+      minF = function (g) {
+        const v = map.get(g.join(''));
+        return v == null || v >= 99 ? Infinity : v;
+      };
+      const t0 = nowMs();
+      minF(state.cells);
+      oracleMs = nowMs() - t0;
+      tableReady = true;
+      window.__knock.ready = true;
+      needPaint = true;
+    });
     if (nowMs() >= inputLock) inputLock = 0;
     Object.keys(panels).forEach(function (key) { panels[key].classList.add('hidden'); });
     document.getElementById('kicker').textContent = 'Table ' + levelNum;
@@ -241,13 +255,50 @@
     return { x: rect.left + p.x * (rect.width / W), y: rect.top + p.y * (rect.height / H) };
   }
 
-  function minFor(n) {
-    const table = window.KnockMin && window.KnockMin[n];
-    if (!table) return KL.makeMin(KL.LEVELS[n - 1].cells);
-    return function (g) {
-      const v = table[g.join('')];
-      return v == null || v >= 99 ? Infinity : v;
+  const PACK_ALPHA = '.#HVabcd1234_~';
+  const maps = {};
+  const mapWaiters = {};
+  function decodeKey(b64) {
+    const bin = atob(b64);
+    let text = '';
+    for (let i = 0; i < bin.length; i++) {
+      const byte = bin.charCodeAt(i);
+      text += PACK_ALPHA[byte >> 4] + PACK_ALPHA[byte & 15];
+    }
+    return text;
+  }
+  function decodePack(pack, done) {
+    const map = new Map();
+    let i = 0;
+    function step() {
+      const t0 = nowMs();
+      while (i + 33 <= pack.length && nowMs() - t0 < 8) {
+        const rec = pack.slice(i, i + 33);
+        i += 33;
+        const ch = rec.charAt(32);
+        map.set(decodeKey(rec.slice(0, 32)), ch === 'z' ? 99 : parseInt(ch, 16));
+      }
+      if (i + 33 <= pack.length) setTimeout(step, 0);
+      else done(map);
+    }
+    step();
+  }
+  function ensureMap(n, done) {
+    if (maps[n]) { done(maps[n]); return; }
+    if (mapWaiters[n]) { mapWaiters[n].push(done); return; }
+    mapWaiters[n] = [done];
+    const finish = function (map) {
+      maps[n] = map;
+      const waiters = mapWaiters[n] || [];
+      delete mapWaiters[n];
+      waiters.forEach(function (fn) { fn(map); });
     };
+    const start = function () { decodePack(window.KnockPack[n], finish); };
+    if (window.KnockPack && window.KnockPack[n]) { start(); return; }
+    const script = document.createElement('script');
+    script.src = 'pack/' + n + '.js';
+    script.onload = start;
+    document.body.appendChild(script);
   }
   function placeArrows() {
     if (!layout || selected == null || anim || state.won || state.reason === 'pushes' || overlayOpen()) {
@@ -258,25 +309,75 @@
     const dirs = ch === 'H' ? [3, 1] : ch === 'V' ? [0, 2] : null;
     if (!dirs) { arrows.classList.add('hidden'); return; }
     arrows.classList.remove('hidden');
-    const origin = cellOrigin(selected);
-    const s = layout.cell;
-    const horizontal = ch === 'H';
-    const bw = Math.max(16, Math.floor((s - 6) / 2));
-    const bh = Math.max(16, s - 8);
+    const size = 48;
+    const centers = [];
+    for (let i = 0; i < 48; i++) {
+      if (state.cells[i] === 'H' || state.cells[i] === 'V') {
+        const o = cellOrigin(i);
+        centers.push({ x: o.x + layout.cell / 2, y: o.y + layout.cell / 2 });
+      }
+    }
+    const stageBox = stage.getBoundingClientRect();
+    document.querySelectorAll('#bar button, #hint, #mute').forEach(function (btn) {
+      const box = btn.getBoundingClientRect();
+      centers.push({
+        x: (box.left + box.width / 2 - stageBox.left) * (W / stageBox.width),
+        y: (box.top + box.height / 2 - stageBox.top) * (H / stageBox.height)
+      });
+    });
+    function covers(rect) {
+      return centers.some(function (p) {
+        return p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+      });
+    }
+    function spot(dir, index) {
+      const s = layout.cell;
+      const o = cellOrigin(selected);
+      const cx = o.x + s / 2;
+      const cy = o.y + s / 2;
+      const ax = DX[dir];
+      const ay = DY[dir];
+      const px = -ay;
+      const py = ax;
+      const options = [];
+      for (let ring = 0; ring <= 4; ring++) {
+        const signs = ring === 0 ? [0] : [-1, 1];
+        signs.forEach(function (sign) {
+          options.push({
+            x: cx + ax * (s / 2 + size / 2 + 6) + px * sign * ring * 36 - size / 2,
+            y: cy + ay * (s / 2 + size / 2 + 6) + py * sign * ring * 36 - size / 2
+          });
+        });
+      }
+      const dockY = Math.max(layout.originY + layout.sheetH + 4, H - layout.bar - size - 6);
+      options.push({ x: index === 0 ? 8 : W - size - 8, y: dockY });
+      options.push({ x: W / 2 + (index === 0 ? -size - 6 : 6), y: dockY });
+      for (let n = 0; n < options.length; n++) {
+        const rect = {
+          x: Math.max(2, Math.min(W - size - 2, options[n].x)),
+          y: Math.max(2, Math.min(H - size - 2, options[n].y)),
+          w: size,
+          h: size
+        };
+        if (!covers(rect)) return rect;
+      }
+      return {
+        x: Math.max(2, Math.min(W - size - 2, index === 0 ? 8 : W - size - 8)),
+        y: Math.max(2, H - layout.bar + 4),
+        w: size,
+        h: Math.max(44, Math.min(size, layout.bar - 8))
+      };
+    }
     [arrowA, arrowB].forEach(function (btn, i) {
       const d = dirs[i];
+      const rect = spot(d, i);
       btn.dataset.dir = String(d);
       btn.textContent = ARROW[d];
       btn.classList.toggle('hint', hintDir === d);
-      const width = horizontal ? bw : bh;
-      const height = horizontal ? bh : bw;
-      const x = origin.x + (horizontal ? (d === 3 ? 2 : s - bw - 2) : 4);
-      const y = origin.y + (horizontal ? 4 : (d === 0 ? 2 : s - bw - 2));
-      btn.style.left = x + 'px';
-      btn.style.top = y + 'px';
-      btn.style.width = width + 'px';
-      btn.style.height = height + 'px';
-      btn.style.fontSize = Math.max(14, Math.floor(s * 0.28)) + 'px';
+      btn.style.left = rect.x + 'px';
+      btn.style.top = rect.y + 'px';
+      btn.style.width = rect.w + 'px';
+      btn.style.height = rect.h + 'px';
     });
   }
 
@@ -357,11 +458,12 @@
   }
   function finishAnim() {
     const outcome = anim.outcome;
+    const fromSkip = !!anim.fromSkip;
     anim = null;
     needPaint = true;
-    if (outcome === 'win') openWin();
-    else if (outcome === 'stuck') openStuck();
-    else if (outcome === 'pushes') openFail();
+    if (outcome === 'win') openWin(fromSkip);
+    else if (outcome === 'stuck') openStuck(fromSkip);
+    else if (outcome === 'pushes') openFail(fromSkip);
     syncHud();
   }
   function wobble(cell) {
@@ -375,22 +477,23 @@
     progress.stars[levelNum] = Math.max(progress.stars[levelNum] || 0, stars);
     if (levelNum >= progress.unlocked && levelNum < 12) progress.unlocked = levelNum + 1;
     progress.parSeen[levelNum] = true;
+    if (state.hintUsed && progress.hinted) delete progress.hinted[levelNum];
     saveProgress();
     document.getElementById('win-stars').textContent = stars === 3 ? '\u2605\u2605\u2605' : stars === 2 ? '\u2605\u2605\u2606' : '\u2605\u2606\u2606';
     document.getElementById('win-copy').textContent = 'Par is ' + level.par + '. You used ' + state.used + (state.hintUsed ? ', with a hint.' : '.');
-    show(panels.win);
+    show(panels.win, arguments[0]);
     const nextBtn = document.getElementById('win-next');
     nextBtn.disabled = levelNum >= 12;
     (nextBtn.disabled ? document.getElementById('win-retry') : nextBtn).focus();
     chime();
   }
-  function openStuck() {
+  function openStuck(fromSkip) {
     document.getElementById('stuck-copy').textContent = 'Undo or Restart. ' + state.pushesLeft + ' push' + (state.pushesLeft === 1 ? '' : 'es') + ' left.';
     document.getElementById('stuck-undo').disabled = state.pushesLeft <= 0;
-    show(panels.stuck);
+    show(panels.stuck, fromSkip);
   }
-  function openFail() {
-    show(panels.fail);
+  function openFail(fromSkip) {
+    show(panels.fail, fromSkip);
   }
   function doUndo() {
     const result = KL.undo(state, minF);
@@ -410,6 +513,8 @@
   function doHint() {
     if (state.hintUsed || state.won || state.reason === 'pushes' || anim) return;
     state.hintUsed = true;
+    progress.hinted[levelNum] = true;
+    saveProgress();
     const mv = KL.hintMove(state.cells, minF);
     if (!mv) {
       lessonEl.textContent = "This table can't be finished.";
@@ -812,7 +917,11 @@
     if (!drag || (event && event.pointerId !== drag.id)) return;
     const info = drag;
     drag = null;
-    if (info.skip) { finishAnim(); return; }
+    if (info.skip) {
+      if (anim) anim.fromSkip = true;
+      finishAnim();
+      return;
+    }
     const outside = !cancel && releaseOutside(event);
     releaseLog = event ? { x: event.clientX, y: event.clientY, outside: !!(cancel || outside) } : null;
     const point = event ? localPoint(event) : { x: info.x, y: info.y };
@@ -820,6 +929,13 @@
     const dy = point.y - info.oy;
     const moved = Math.hypot(dx, dy) >= 8;
     needPaint = true;
+    if (!moved && info.retap) {
+      selected = null;
+      hintDir = null;
+      preview = null;
+      syncHud();
+      return;
+    }
     if (cancel || outside || boardBlocked() || moved) {
       selected = null;
       hintDir = null;
@@ -853,9 +969,10 @@
       needPaint = true;
       return;
     }
+    const retap = cell === selected && !arrows.classList.contains('hidden');
     selected = cell;
-    hintDir = null;
-    drag = { cell: cell, x: p.x, y: p.y, ox: p.x, oy: p.y, id: event.pointerId, dir: null };
+    if (!retap) hintDir = null;
+    drag = { cell: cell, x: p.x, y: p.y, ox: p.x, oy: p.y, id: event.pointerId, dir: null, retap: retap };
     arrows.classList.add('hidden');
     try { canvas.setPointerCapture(event.pointerId); } catch (err) { /* a synthetic pointer has nothing to capture */ }
     finger.classList.add('hidden');
@@ -878,28 +995,68 @@
   canvas.addEventListener('pointerleave', function (event) { if (drag) endDrag(event, true); });
   canvas.addEventListener('contextmenu', function (event) { event.preventDefault(); });
 
+  let arrowDrag = null;
   function arrowDown(event) {
     unlockAudio();
     if (boardBlocked() || selected == null) return;
     const d = +event.currentTarget.dataset.dir;
+    arrowDrag = { id: event.pointerId, ox: event.clientX, oy: event.clientY, dir: d };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch (err) { /* synthetic */ }
     if (KL.canFall(state.cells, selected, d)) preview = KL.push(state.cells, selected, d);
     else preview = null;
     needPaint = true;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function arrowMove(event) {
+    if (!arrowDrag || event.pointerId !== arrowDrag.id || selected == null) return;
+    const start = localPoint({ clientX: arrowDrag.ox, clientY: arrowDrag.oy });
+    const p = localPoint(event);
+    const dx = p.x - start.x;
+    const dy = p.y - start.y;
+    if (Math.hypot(event.clientX - arrowDrag.ox, event.clientY - arrowDrag.oy) < 8) return;
+    const dir = axisDir(state.cells[selected], dx, dy);
+    arrowDrag.swipe = dir;
+    if (dir != null && projection(dir, dx, dy) >= 12 && KL.canFall(state.cells, selected, dir)) preview = KL.push(state.cells, selected, dir);
+    else if (hintDir == null) preview = null;
+    needPaint = true;
   }
   function arrowUp(event) {
-    if (boardBlocked() || selected == null) return;
-    const d = +event.currentTarget.dataset.dir;
+    if (!arrowDrag || event.pointerId !== arrowDrag.id) return;
+    const info = arrowDrag;
+    arrowDrag = null;
+    if (boardBlocked() || selected == null) { preview = null; needPaint = true; return; }
+    const start = localPoint({ clientX: info.ox, clientY: info.oy });
+    const p = localPoint(event);
+    const dx = p.x - start.x;
+    const dy = p.y - start.y;
+    const moved = Math.hypot(event.clientX - info.ox, event.clientY - info.oy) >= 8;
+    if (!moved) {
+      if (!KL.canFall(state.cells, selected, info.dir)) wobble(selected);
+      else doPush(selected, info.dir);
+      needPaint = true;
+      return;
+    }
     preview = null;
-    if (!KL.canFall(state.cells, selected, d)) wobble(selected);
-    else doPush(selected, d);
+    if (releaseOutside(event)) { needPaint = true; return; }
+    const dir = axisDir(state.cells[selected], dx, dy);
+    if (dir != null && projection(dir, dx, dy) >= 24 && KL.canFall(state.cells, selected, dir)) doPush(selected, dir);
     needPaint = true;
   }
   arrowA.addEventListener('pointerdown', arrowDown);
   arrowB.addEventListener('pointerdown', arrowDown);
+  arrowA.addEventListener('pointermove', arrowMove);
+  arrowB.addEventListener('pointermove', arrowMove);
   arrowA.addEventListener('pointerup', arrowUp);
   arrowB.addEventListener('pointerup', arrowUp);
-  arrowA.addEventListener('pointerenter', arrowDown);
-  arrowB.addEventListener('pointerenter', arrowDown);
+  function arrowHover(event) {
+    if (arrowDrag || boardBlocked() || selected == null) return;
+    const d = +event.currentTarget.dataset.dir;
+    if (KL.canFall(state.cells, selected, d)) preview = KL.push(state.cells, selected, d);
+    needPaint = true;
+  }
+  arrowA.addEventListener('pointerenter', arrowHover);
+  arrowB.addEventListener('pointerenter', arrowHover);
   function clearArrowPreview() {
     if (hintDir == null) preview = null;
     needPaint = true;
@@ -1003,7 +1160,7 @@
   }
 
   window.__knock = {
-    ready: true,
+    ready: false,
     load: loadLevel,
     cellSize: function () { return layout.cell; },
     bufferScale: function () { return dpr; },

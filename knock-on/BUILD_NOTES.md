@@ -90,6 +90,20 @@ R0 was REVISE at 71/100 (`QA_REPORT.md`). Rules and the twelve levels are unchan
 | KO-009 | Arrows are clipped to the selected cell, so they do not meet the button bar | `game.js` placeArrows | The L3 arrow boxes lie inside the cell at 390 | PASS |
 | KO-010 | R restarts immediately when no push has been spent, and confirms after one has | `game.js` keydown | Same rule as the Restart button | PASS |
 
+## QA revision 2
+
+R1 was REVISE at 76/100. The attached report is `QA_REPORT.md`. The previous report file is `QA_REPORT_R1.md`. Rules and the twelve levels are unchanged.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| KO-012 | A drag of 8 px or more that starts on an arrow follows the finger, not the arrow. A second tap on the selected domino clears the selection and spends nothing | `game.js` arrowUp, endDrag | L1: double-tap leaves 3 pushes and hides the arrows. A west-arrow drag to the east clears the table | PASS |
+| KO-013 | A used hint is saved on the level and stays used across Restart, Retry and reload. The clear that follows is hinted, so it cannot be 3★. Winning clears the flag for a later attempt | `game.js` progress.hinted | Hint, Restart, reload: the button stays Used. The clear says "with a hint" and is not 3★. Retry then offers Hint again | PASS |
+| KO-014 | Arrow buttons are 48 px and sit off every domino's centre, including the selected one. If the ends are crowded they dock in the free strip above the bar | `game.js` placeArrows | L3 arrows are at least 44 px tall and do not cover the selected centre | PASS |
+| KO-015 | The 340 ms panel lock is set only when a cascade skip opens the panel | `game.js` show | Menu and confirm are not locked. A skip still cannot press the banner | PASS |
+| KO-016 | The 6,172,825-byte `min.js` is gone. Each level is a nibble-packed file under `pack/`, loaded when that table opens and decoded in 8 ms slices. Startup loads only level 1 | `pack/*.js` | At 6× CPU the startup long task is 0 ms. The largest later frame gap is one throttled frame, about 100 ms of wall time | PASS |
+
+Packed tables are 3,781,856 bytes in total. Level 9 is 1,276,430 bytes.
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/knock-on/
