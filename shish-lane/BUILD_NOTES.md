@@ -42,7 +42,7 @@
 - The grill bed is `#1A1412` so tomato `#E8483B` is 4.7:1 against it. `#E8483B` on the brief's `#2B2522` measures 3.9:1. The surround stays `#2B2522`.
 - Foods are drawn shapes: round tomato, square pepper, triangle onion. A slab is a wide bar with ⟷. Coal is a dark tile with ember dots.
 - The 80 ms food stagger is compressed so the whole commit stays inside 340 ms on a long lane. The pin still eases out and the foods still arrive one after another.
-- Stars are undos: 0 → ★★★, 1 → ★★, 2 → ★. Two undos use the two spare skewers and a clear is still possible, so ★ can be earned. An empty budget is the fail card. The HUD button says Undo. The pip was already spent on the serve, so the button does not show a second −1.
+- Stars are undos: 0 → ★★★, 1 → ★★, 2 → ★. Two undos use the two spare skewers and a clear is still possible, so ★ can be earned. Undo does not spend a second skewer. The button is labelled −1 with a skewer mark, and the spent pip flashes, so the cost that was paid on the serve stays visible.
 
 ## QA revision 1
 
@@ -57,10 +57,23 @@ Held for Game Finder. Not pushed. L7 is unchanged.
 | SL-005 | Browser tests load Playwright from the repo package, and the page URL does not depend on the working directory | `tests/browser.test.mjs` | The suite passes when started from `/tmp` | PASS |
 | SL-006 | Top lane zones sit below the ticket rail | `game.js` fit | At 320×568, no T zone intersects the rail on L1–L11 | PASS |
 
+## QA revision 2
+
+No rule changes and no level changes. The 1-net undo rule is unchanged: a serve spends the skewer, and undo does not spend another.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| Visuals | Clearer food, a steel skewer with a wooden handle, larger ticket glyphs, a serve stamp, a pierce burst, and a sweep when a longer lane opens | `game.js` drawing, `index.html` tickets | 19/19 still pass. FPS min 59.6 at 390×844, DPR cap 1.5, buffer 585, 4× CPU | PASS |
+| Undo label | The button shows −1 and a skewer mark. The spent pip flashes. The skewer count does not drop again | `index.html`, `game.js` flashSpentPip | Two undos still leave budget − 2 and a ★ clear. The button text contains −1 | PASS |
+| SL-007 | Keep the Out of skewers card | No behaviour change | Documented. Under skewers − tickets = 2 − undos, the short-budget banner appears while skewers are still above 0 and then blocks play, so the fail card is not reached. It stays as a safeguard if a later change spends the last skewer with tickets open | PASS |
+| SL-009 | 44 px lane zones at 320×568 for L8–L11 | Compact ticket row below 360 px wide | L8 and L10 are 44 px. L9 and L11 stay 38 px. A 6-column board at 44 px is 264 px, and the two 44 px side gutters need 88 px more, which is 352 px and does not fit a 320 px screen. At 390, L11 stays 50 px | PASS |
+| Tests | Browser tests need the repo install | Note only | `npm install` provides Playwright. Without `node_modules` the browser file cannot resolve it | PASS |
+
 ## Testing
 
+- Install first: `npm install` at the repo root. The browser suite loads Playwright from that install.
 - `node --test --test-timeout=180000 shish-lane/tests/logic.test.mjs shish-lane/tests/browser.test.mjs`
-- Result: 19 tests, 19 pass, 0 fail.
+- Result: 19 tests, 19 pass, 0 fail. Fidelity: 400 cases, 1,321 legal thrusts, 0 mismatches.
 - FPS: min 59.6 of 59.6, 60.0, 60.0. Scale 1.5, buffer 585. Gate is 50.
 - Misfires: 0 / 100.
 - Not claimed from a device lab. The fps gate is the throttled desktop Chrome run the other games use.
@@ -74,6 +87,8 @@ Held for Game Finder. Not pushed. L7 is unchanged.
 
 Screenshots:
 
+- `/opt/cursor/artifacts/shish-lane-390-l1.png`
+- `/opt/cursor/artifacts/shish-lane-390-l11.png`
+- `/opt/cursor/artifacts/shish-lane-390-serve.png`
 - `/opt/cursor/artifacts/shish-lane-desktop-1440.png`
 - `/opt/cursor/artifacts/shish-lane-desktop-1920.png`
-- `/opt/cursor/artifacts/shish-lane-390.png`

@@ -1,109 +1,125 @@
-# Shish Lane — QA Report R0
-Build: brerdem/games `main` @ 4092315954263c61e25bcbdb98019482b9b1b76f (commit time 2026-10-24 17:10 UTC+3), folder `shish-lane`, live https://brerdem.github.io/games/shish-lane/
-Tester: Grok Bot (Game Tester). The game code was not modified. Tools are in `tools/shish-lane/`; raw data is in `reports/shish-lane/data/`.
-Method notes: all touch input was real CDP touch events (synthetic, not a human finger). Headless Chrome fps is indicative only. Every percentage marked SIMULATION is an exact probability from full recursion, not a sample.
+# Shish Lane — QA Report R1 (revision cycle 1 of 2)
+Build: brerdem/games `main` @ 43d527e383290d18167e0de4572064b17bd552c1 (merges 065604b). Live: https://brerdem.github.io/games/shish-lane/
+Brief: v1 plus amendment v1.1. The repo's `BRIEF-v1.1.md` is byte-identical to `/workspace/game-ideas/amendments/shish-lane-BRIEF-v1.1.md`.
+- The R0 report, shots and data are archived as `QA_REPORT_R0.md`, `shots_r0/` and `data_r0/`.
+- The repo's `shish-lane/QA_REPORT.md` is byte-identical to my R0 report.
+- Game code was not modified.
+- All touch input is synthetic (CDP touch events). Headless fps is indicative only. All odds marked SIMULATION are exact recursion, not sampling.
 
 ## A. Verdict
-**REVISE — 72/100.** The total is below 80. All category gates pass. There is no P0, but there are two P1 issues: the undo economy contradicts the star table and the sandbox model, and L7 random+undo is over its threshold. Once those are fixed, the build needs human review only. It is not production-ready.
+**REVISE — 76/100.**
+- All gates pass and there are no P0 or P1 issues. SL-001 to SL-006 are all fixed.
+- The score stays under 80 because Visuals and Hook are unchanged and unvalidated by humans.
+- A PASS would require humans first.
 
-| Category | Score | Gate | Basis |
-|---|---|---|---|
-| Core | 15/20 | ≥14 ✓ | Rules match the brief exactly: 0 mismatches over every reachable state. The undo economy (SL-001) caps play at one useful undo. |
-| Feel | 14/20 | ≥14 ✓ | Commit takes 310–330 ms with drag preview, a free mismatch shake and stable 60 fps. The stuck card can be a dead end (SL-003). touchcancel commits a thrust (SL-004). |
-| Hook | 11/15 | ≥10 ✓ | Each swipe clears a strong chunk of the board and opens new lanes. Real appeal is untested by humans (H1–H4). |
-| Progression | 11/15 | — | 11 levels; coal and slab each get one teaching card. L7 random+undo is at 17.4% (SL-002). The ★ tier is unreachable (SL-001). |
-| Visuals | 6/10 | — | Clean and readable, using shapes plus colour. Flat canvas primitives, no art assets. |
-| Mobile | 8/10 | ≥7 ✓ | No overflow or off-screen UI at 19 sizes. Lane zones are ≥44 px. Phone landscape shows a rotate card by design. |
-| Originality | 7/10 | ≥6 ✓ | The lane, first-4 cap and either-direction ticket rules are distinct. The theme overlaps adjacent games (brief §B). |
-| **Total** | **72** | 80 ✗ | |
+| Category | R0 | R1 | Gate | Why it changed |
+|---|---|---|---|---|
+| Core | 15 | 17/20 | ≥14 ✓ | The undo economy now matches the brief: 2 undos clear for ★. The banners are exact. |
+| Feel | 14 | 15/20 | ≥14 ✓ | No dead-end Undo button. pointercancel is safe. Commit still takes 310–330 ms. |
+| Hook | 11 | 11/15 | ≥10 ✓ | Unchanged. Needs H1–H4. |
+| Progression | 11 | 12/15 | — | All L7–L11 targets met (exact). Two small curve bumps (see E). |
+| Visuals | 6 | 6/10 | — | Unchanged: flat primitives. |
+| Mobile | 8 | 8/10 | ≥7 ✓ | The 320 rail overlap is fixed. At 320×568, lane zones on L8–L11 are 38 px (SL-009). |
+| Originality | 7 | 7/10 | ≥6 ✓ | — |
+| **Total** | 72 | **76** | 80 ✗ | |
 
-## B. Build and file integrity
-- The sha256 of the live index.html, game.js and logic.js matches the commit.
-- BRIEF.md is byte-identical to the Game Finder brief.
-- Dropped features are consistent with the brief: no hint (§K "No hint in the MVP"), no L12 (§N "Ship 11"), and no daily grill (listed under Future, not authorised).
+## B. Integrity
+- The sha256 of the live index.html, game.js and logic.js equals the commit (e7587272…, 3a615344…, eb4a445c…).
+- My independent engine, run on the v1.1 pack, found 0 mismatches over 1,687 reachable states and 5,122 legal thrusts (`data/o_fid_v11.txt`).
+- New L7 checks:
+  - It matches the amendment text.
+  - It has 91 states.
+  - Its reference line clears.
+  - It is non-isomorphic to the other 10 levels (D4 symmetries × letter relabel).
+  - It is unsolvable without its slabs and still solvable without its coal. The amendment says the coal matters for lazy play, not for solvability; I did not re-check the 57.7% figure.
 
-## C. Builder claim checks
+## C. SL-001 to SL-006 (real interaction at 360, 390 and 430 unless noted; data in `data/r1_fix_checks.json`)
+| ID | Status | Evidence |
+|---|---|---|
+| SL-001 | **FIXED** | L7 skewers went 9 → fatal 8 → undo 8 → fatal 7 → undo 7. The reference line then won with **★ (1 star), "Cleared with 2 undos."** at all 3 sizes (`shots/m390_r1_02_L7_two_undo_one_star_win.png`). On L1, each serve/undo cycle costs exactly 1. |
+| SL-002 | **FIXED** | Exact L7 RAND+probe is 9.3% and the lazy max is 13.3% (see E). |
+| SL-003 | **FIXED** | A fatal thrust shows "No remaining sequence…" with Undo enabled (`m390_r1_01…`). After 3 serve/undo cycles on L1 (3 skewers, 4 tickets, solvable board), the banner reads "Not enough skewers to serve the remaining tickets." plus "Nothing left to undo." with Undo disabled (`m390_r1_03…`). Three taps on the disabled Undo changed nothing. M4 regression: 25 states, 0 stuck or banner mismatches. |
+| SL-004 | **FIXED** | touchCancel after 0.6, 1.0 and 1.5 cells of inward drag: no thrust at all 3 sizes. A clean probe on T0, L1, R2 and B3 at 390 and 430 also gave no thrust. A normal swipe afterwards still commits. (One run of my older gesture script showed "THRUST on cancel"; that was an artifact of an earlier diagonal thrust in the same session, ruled out by the clean probe.) |
+| SL-005 | **FIXED** (needs `npm install`) | `playwright` is now resolved through the repo-root package.json devDependency. From the bare repo without node_modules it still fails (8/9). From a /tmp copy with node_modules, run from `/`, it gives 19/19. |
+| SL-006 | **FIXED** | At 320×568, 360×640 and 375×667, on L1–L11: 0 T-zones overlap the rail, 0 B-zones overlap the bar, 0 off-screen. Real swipes on all 24 lane ends of L11 at 320×568 were all correct (`data/sl006_small_screens.json`, `shots/sl006_320x568_L11.png`). |
+
+## D. Regression M1–M8 and method checks
+- **M1:** all 11 reference lines ★★★ via swipes at 360, 390 and 430. Each lesson card appears once (L5 coal, L7 slab).
+- **M2:** a mismatch is free.
+- **M3:** a serve costs 1 and an undo adds 0. Restart restores the budget.
+- **M4:** 25 states, 0 mismatches.
+- **M5:** checked exhaustively in the engine comparison.
+- **M6:** the smallest zone was 44 at 360, 390 and 430. A tap, an 8 px drag and a 30% drag cause no thrust.
+- **M7:** commit takes 310–330 ms.
+- **M8:** the pack matches, and I checked non-isomorphism independently.
+- **Misfires:** 0/350 (L11; 100, 150 and 100 swipes; ±3 px wobble). No missed commits and no wrong lanes.
+- **Overlays:**
+  - Win "Next" ×2 or ×3 advanced one level.
+  - Stuck-undo ×3 applied 1 undo.
+  - Disabled Undo ×3 did nothing.
+- **Rotate and resize:** mid-L7 state kept, landscape shows the rotate card and ignores swipes, and the level was then won (3 sizes).
+- **19 sizes:** no off-screen UI and no scroll. Bar buttons are 48 px.
+- **Offline:** file:// play won L1 with ★★★ and 0 network requests (moves made through the game's hook).
+- **Keyboard and URL:** `?level=7` loads L7, and Enter thrust R0 (a legal serve, costing 1).
+- **Page errors:** 0.
+- **fps (390, DPR 2, 4× throttle, swiped L11 solve):** 59.6 / 59.3 / 59.2 avg; p95 16.7–16.8 ms; worst frames 50, 67 and 117 ms. A DPR 3 run gave 59.7 / 60 / 60.
+
+## E. Exact odds, cost-1 undo rule (SIMULATION; `data/o_odds_v11.txt`)
+| L | RAND | RAND+probe | Lazy max (policy) | Safe openings |
+|---|---|---|---|---|
+| 1 | 70 | 100 | 100 | 4/4 |
+| 2 | 8.3 | 51.1 | 83.3 COVER+p | 2/6 |
+| 3 | 5.6 | 50 | 83.3 PLY2+p | 1/3 |
+| 4 | 6.3 | 37.5 | 75 ROWS+p | 1/6 |
+| 5 | 5 | 30 | 75 PLY2+p | 1/5 |
+| 6 | 0.1 | 2.1 | 37.2 COLS+p | 2/9 |
+| 7 | 0.9 | **9.3** ✓ | **13.3** SHORT+p ✓ | 1/6 |
+| 8 | 0.8 | 7.1 ✓ | 14.3 COLS+p ✓ | 1/7 |
+| 9 | 0.6 | 9.0 ✓ | 13.8 SHORT+p ✓ | 3/8 |
+| 10 | 0.5 | 7.5 ✓ | 16.7 COVER+p ✓ | 1/6 |
+| 11 | 0.1 | **1.5** | **8.2** COVER+p | 2/6 |
+
+- **L11 hardest: PASS.** From L7 on it has the lowest RAND+probe and lazy max, the most states (549), and the highest fatal share on the brief's reference-path measure (0.442).
+- **Game Finder claims:**
+  - L7 RAND+probe 9.3%: ✓
+  - L6 RAND+probe 2.1%: ✓
+  - L10 lazy max 16.7% vs L9 13.8%: ✓
+  - L7 lazy max 21.3%: ✗. I get 13.3%. Their 21.3% comes from MINDIS+probe, and I traced it to their `lib.py` comparing cell tuples in travel order, so a match that is still open but now reached from the other end counts as "broken". In a copy of their code with set comparison, L7 MINDIS+probe is 0.0%, the same as mine (SL-008). Either value is under 30%.
+- **Curve bumps, and whether they matter:**
+  - **L6:** RAND+probe is 2.1%, below L7–L10. But L6 is the most heuristic-friendly level from L6 on (lazy max 37.2%, COLS+probe). It is a wall for random players and easy for column-minded ones. It is right before the slab level, so it could feel like a spike. This is minor and does not breach any target; flagged for a human check (H3/H4).
+  - **L10 vs L9:** lazy max is 16.7% vs 13.8%, driven by one policy. L10 is harder on RAND+probe (7.5% vs 9.0%) and has fewer safe openings (1/6 vs 3/8). Negligible.
+
+## F. Builder claims
 | Claim | Result |
 |---|---|
-| 15/15 tests | **Confirmed 15/15**, but only after Playwright was made resolvable. Out of the box, browser.test.mjs fails with ERR_MODULE_NOT_FOUND, giving 8/9 (SL-005). I ran the tests from a temp copy plus a node_modules symlink; the repo was untouched. |
-| Fidelity 400 cases, 0 mismatches | Confirmed by their test. My own independent engine went further: all 1,814 reachable states and 5,469 legal thrusts across 11 levels, with 0 mismatches in sequence, cells, stop reason, legal set or solver (`data/o_fid.txt`). State counts match the brief. |
-| Misfires 0/100 | Confirmed by me at **0/350** (L11; 100 at 360, 150 at 390, 100 at 430). Each swipe had ±3 px wobble, ±6 px start jitter and 0.8–1.4 cells of travel. There were 0 non-commits and 0 wrong lanes. These are synthetic swipes. |
-| FPS min 60 | **Nearly confirmed.** At 390, DPR 2, 4× throttle, three swiped L11 solves gave 59.9 / 59.9 / 59.9 avg fps, p95 16.8 ms, worst frame 33.3 ms (one dropped frame). A DPR 3 run gave 59.8 / 60 / 60. |
-| Commit ≤340 ms | Observed animMs of 310–330. |
-| L11 cell 50 px at 390 | Confirmed (45 at 360, 57 at 430). |
-| Restart fade ~160 ms | **Not measured.** Restart restoring the full budget was observed. |
-
-## D. Brief M1–M8
-- **M1 PASS:** all 11 reference lines cleared with ★★★ via real swipes at 360, 390 and 430 (`data/m1_reference_swipes.json`).
-- **M2 PASS:** a mismatched swipe on L1 left the board, tickets and skewers unchanged.
-- **M3 PASS as literally worded** (undo restores the board and ticket and costs exactly 1; restart restores 6/6 and 9/9). But see SL-001: a serve plus an undo costs 2 skewers.
-- **M4 PARTIAL:**
-  - 25 states checked (each start L2–L11 plus random swipe walks): 0 mismatches against the game's own rule (solver-unsolvable or skewers < tickets).
-  - The game also raises the "unsolvable" banner when the board is solvable but skewers < tickets, e.g. L7 at its start position after 2 undos. That breaks the brief's "iff the solver says unsolvable" (SL-003).
-- **M5 PASS:** checked exhaustively in the engine comparison, and the coal/slab levels were played through with swipes.
-- **M6 PASS:** the smallest lane zone was 44×44 on every level at 360, 390 and 430. A tap, an 8 px drag and a 30%-cell drag never thrust.
-- **M7 PASS:** commit takes 310–330 ms and fps is as above (headless, indicative only).
-- **M8:**
-  - Pack exactness: PASS (my parse equals logic.js).
-  - Non-isomorphism: confirmed only by the builder's test, not checked independently.
-
-## E. Game Finder targets (SIMULATION, exact)
-Model: the sandbox's own policies, with thrusts de-duplicated by cell set. Probe means undo and ban the fatal thrust, at most 2 times. Source: `tools/shish-lane/sodds2.mjs` → `data/o_odds2.txt`.
-
-| Level | Lazy max (policy) | RAND+probe | Target |
-|---|---|---|---|
-| L7 | 29.0 (LONG+probe) | **17.4 ✗** | ≤30 / ≤16 |
-| L8 | 14.3 | 7.1 | ✓ |
-| L9 | 13.8 | 9.0 | ✓ |
-| L10 | 16.7 | 7.5 | ✓ |
-| L11 | 8.2 | 1.5 | ✓ |
-
-- The brief's L7 figure of 15.3% came from a 300-sample run. The builder's test reuses that seed, so it passes; the exact value fails (SL-002).
-- With the game's real economy (only 1 useful undo, see SL-001), L7 random+undo is 8.8% and L7 lazy max is 16.2% (`data/o_odds_1undo.txt`).
-- **L11 hardest: PASS.** It has the lowest lazy max and RAND+probe of L7–L11 (also below L6), the most states (549), and the highest fatal share on the brief's reference-path metric (0.442). On my alternative all-states metric, L6 is higher (0.647 vs 0.469).
-- **Swipe misfires under 3/100: PASS** (0/350, synthetic).
-
-## F. Lose states, gestures, overlays, resize
-- **Stuck banner:** shown on a fatal L7 thrust (`shots/m390_rules_01_L7_stuck_banner.png`).
-- **Fail card:** reached at all 3 sizes (L1: 3 serves, then undo, undo, stuck-undo → 0 skewers) (`shots/m390_mis_01_fail_card.png`).
-- **Second undo:** always triggers the banner. On L7 it shows at the start position with 5 skewers for 7 tickets (`shots/m390_rules_02_L7_after_undo2.png`). After undoing back to the start on L1, the banner's "Undo −1" does nothing and is not disabled (`shots/m390_mis_02_stuck_after_two_undos_L1.png`).
-- **Gestures:**
-  - Drag-back cancel: no thrust.
-  - Swipe starting in the board centre: no thrust.
-  - Release far past the board: commits (acceptable).
-  - An exact 45° diagonal resolves to vertical at 390/430 (note only).
-  - **touchcancel after a 1-cell drag commits the thrust** at all sizes (SL-004).
-- **Overlay multi-taps:**
-  - Win "Next" ×2 and ×3 went to L2 exactly once.
-  - Stuck-undo ×3 applied 1 undo.
-  - Fail-restart ×3 gave one clean restart.
-- **Rotate/resize:** mid-L7 state kept through portrait → landscape → portrait and a shrink. Landscape phone shows "Turn upright" and ignores swipes. Each level was then finished with a win. All at 3 sizes.
-- **Off-screen checks (19 sizes, 320×568 to 1920×1080 plus 3 landscape phones):** no off-screen buttons, rail or HUD, and no scroll. Bar buttons are 48 px high.
-  - At 320×568, the T-lane zones overlap the ticket rail (SL-006).
-  - Landscape phones are covered by the rotate card.
-- **file:// offline:** L1 won with ★★★ and 0 network requests (moves via the commit hook, not swipes).
-- **Keyboard and URL:** `?level=7` loaded L7. Arrow then Enter thrust R0 (a mismatch, so it was free).
-- **Errors:** 0 page errors in all runs.
+| 19/19 tests | **Confirmed 19/19** (from a /tmp copy with Playwright installed). From the bare repo: 8/9, browser suite missing Playwright. |
+| min fps 59.6 | **Approximately.** My runs averaged 59.6, 59.3 and 59.2. The builder's own suite gave 59.3, 60.0 and 60.0 on my box today. That is within headless noise, but my lowest run is below 59.6. |
+| SL-001–006 PASS | All confirmed (C). |
 
 ## G. Issues
-| ID | Pri | Owner | Issue / evidence |
+| ID | Pri | Owner | Status / evidence |
 |---|---|---|---|
-| SL-001 | P1 | MVP Builder (Game Finder rules on the intent) | The serve skewer is not refunded **and** undo charges another 1, so skewers − tickets = 2 − 2×undos. Consequences: one undo leaves exactly zero slack; a second undo always triggers the stuck banner; ★ (2 undos) can never be earned. The sandbox (§E) models 2 usable undos. Evidence: `data/rules_390.json` (L7: 9 → 8 → 7 (u1) → 6 → 5 (u2, stuck); a one-undo clear ends ★★ with 0 skewers); game.js:294 and :383. |
-| SL-002 | P1 | Game Finder (pack/threshold), then MVP Builder | Exact L7 RAND+probe is 17.4%, over the 16% limit (the brief's 15.3% was a 300-sample estimate). This interacts with SL-001: under the current 1-undo economy it is 8.8%. Decide the economy first, then re-check. |
-| SL-003 | P2 | MVP Builder | After a budget-stuck, the banner says "No remaining sequence can serve every ticket." even when the board is solvable, which breaks M4's "iff". Its primary "Undo −1" stays enabled and does nothing once the undo stack is empty. Shots: `m390_rules_02…`, `m390_mis_02…`. |
-| SL-004 | P2 | MVP Builder | pointercancel is handled like pointerup and commits a thrust (game.js:836). An OS interruption mid-drag spends a skewer. Seen at 360, 390 and 430 (`data/input_overlays_rotate.json`). |
-| SL-005 | P3 | MVP Builder | browser.test.mjs cannot find `playwright` from the repo. Document or add the dependency. |
-| SL-006 | P3 | MVP Builder | At 320×568, the T-lane hit zones overlap the bottom of the ticket rail. |
+| SL-001 to SL-006 | — | — | FIXED (C). SL-005 needs `npm install`. |
+| SL-007 (new) | P3 | MVP Builder / Game Finder | The fail card "Out of skewers" can no longer appear. Skewers − tickets = 2 − undos, so the short-budget banner always appears first and play stops there. Observed at all 3 sizes: the L1 path ended at the short banner with Undo disabled; the fail card never showed. Decide whether to remove it or keep it as a safeguard. |
+| SL-008 (new) | P3 | Game Finder | The `exact.py` MINDIS tuple-order artifact inflates L7's lazy max to 21.3% (true value 0.0% for that policy; L7 lazy max is 13.3%). No impact on any target. |
+| SL-009 (new) | P3 | MVP Builder | At 320×568, L8–L11 cells are 38 px, so lane zones are 38 px along the edge (below 44). The brief only requires 44 at 390. All 24 L11 swipes still landed correctly. |
 
-## H. Human playtest list (not done, need humans)
-- H1: rules understood without text by L3.
-- H2: the long-lane moment feels satisfying.
-- H3: players plan ≥2 thrusts ahead from L6.
-- H4: failures feel fair. Watch for SL-001: does a second undo feel like a forced fail?
-- Real-finger misfire rate (my 0/350 was synthetic).
+## H. Human playtest list (not done)
+- H1–H4.
+- The L6 spike before slabs.
+- Whether undo, with no visible "−1" any more (the pip only changes on the serve), is understood.
+- Real-finger misfires.
 - Real-device fps.
 
 ## I. Key artifacts
-- **Screenshots:** `shots/m390_m1_02_L11_win.png`, `m390_rules_01_L7_stuck_banner.png`, `m390_rules_02_L7_after_undo2.png`, `m390_rules_03_L7_one_undo_win.png`, `m390_mis_01_fail_card.png`, `m390_mis_02_stuck_after_two_undos_L1.png`, `m390_input_01_landscape_mid_L7.png`, `size_*_L11.png` (19 sizes), `m390d2_fps3_01_L11_win_fps_dpr2.png`.
-- **Data:** `data/o_fid.txt`, `o_odds2.txt`, `o_odds_1undo.txt`, `o_odds.txt` (alternate non-deduped model), `o_tests.txt`, `m1_reference_swipes.json`, `rules_390.json`, `input_overlays_rotate.json`, `misfire_fail.json`, `misc.json`, `fps_390_dpr2_4x.json`.
-- Times are UTC+3. Report written 2026-10-22.
+- **Shots:**
+  - `shots/m390_r1_01_L7_unsolvable_banner.png`
+  - `m390_r1_02_L7_two_undo_one_star_win.png`
+  - `m390_r1_03_L1_short_budget_banner.png`
+  - `sl006_320x568_L1.png`, `sl006_320x568_L11.png`
+  - `m390_m1_02_L11_win.png`
+  - `m390_input_01_landscape_mid_L7.png`
+  - `size_*_L11.png` (19 sizes)
+  - `m390d2_fps3_01_L11_win_fps_dpr2.png`
+- **Data:** `o_tests.txt`, `o_tests_root.txt`, `o_odds_v11.txt`, `o_fid_v11.txt`, `r1_fix_checks.json`, `sl006_small_screens.json`, `m1_reference_swipes.json`, `m2_m4_tap_390.json`, `input_overlays_rotate.json`, `misfire_fail.json`, `misc.json`, `fps_390_dpr2_4x.json`.
+- Times are UTC+3. Report written 2026-10-24.

@@ -63,6 +63,11 @@
   .pips { display: flex; gap: 4px; margin-top: 4px; }
   .pip { width: 14px; height: 22px; border-radius: 7px; background: #C5CCD1; box-shadow: inset 0 -3px 0 rgba(0,0,0,.28); }
   .pip.spent { background: transparent; box-shadow: none; border: 1px dashed #8A8178; }
+  .pip.flash { animation: pipflash 420ms ease-out; }
+  @keyframes pipflash {
+    0% { background: #FF7A1A; transform: scale(1.25); box-shadow: 0 0 0 3px rgba(255,122,26,.45); }
+    100% { background: transparent; transform: scale(1); box-shadow: none; }
+  }
   #mute { width: 56px; padding: 0; }
   #rail {
     top: 72px; display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 4px;
@@ -75,18 +80,39 @@
     75% { transform: translateX(5px); }
   }
   .ticket {
-    flex: 0 0 auto; min-width: 42px; height: 46px; padding: 3px 5px 2px;
-    background: #F3E6C8; color: #2A2118; border-radius: 4px 4px 8px 8px;
+    flex: 0 0 auto; min-width: 52px; min-height: 58px; height: auto; padding: 4px 6px 3px;
+    background: #F3E6C8; color: #1A100C; border-radius: 4px 4px 8px 8px;
     box-shadow: 0 2px 0 #C9A36A; text-align: center; position: relative;
   }
-  .ticket .word { font-size: 13px; letter-spacing: .04em; font-weight: 700; }
-  .ticket .shapes { height: 16px; }
-  .ticket.served { background: #E7D7B0; }
-  .ticket.served .word { font-size: 10px; letter-spacing: .08em; }
+  .ticket .word { font-size: 13px; letter-spacing: .06em; font-weight: 700; line-height: 1.1; }
+  .ticket .shapes { display: flex; gap: 1px; justify-content: center; align-items: flex-end; height: 24px; }
+  .ticket .glyph { display: block; width: 20px; height: 20px; }
+  @media (max-width: 359px) {
+    .ticket { flex: 1 1 15%; min-width: 0; min-height: 0; padding: 2px 1px 1px; }
+    .ticket .glyph { width: 12px; height: 12px; }
+    .ticket .shapes { height: 14px; gap: 0; }
+    .ticket .word { font-size: 9px; letter-spacing: 0; }
+  }
+  .ticket.served { background: #E7D7B0; animation: stampin 180ms ease-out; }
+  .ticket.served .word { font-size: 11px; letter-spacing: .08em; }
   .ticket.hot { outline: 2px solid #FF7A1A; }
+  @keyframes stampin {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
   .stamp {
-    position: absolute; inset: 8px 2px auto; font-size: 11px; letter-spacing: .12em;
-    color: #E8483B; border: 2px solid #E8483B; transform: rotate(-8deg); font-weight: 700;
+    position: absolute; left: 1px; right: 1px; bottom: 2px; font-size: 11px; letter-spacing: .08em;
+    color: #C4271C; border: 2px solid #C4271C; transform: rotate(-6deg); font-weight: 700;
+    background: rgba(243, 230, 200, .8);
+  }
+  .bite {
+    display: inline-block; width: 16px; height: 3px; margin-left: 4px; vertical-align: middle;
+    background: #E7EEF2; border-radius: 2px; box-shadow: 0 0 0 1px #1A100C; position: relative;
+  }
+  .bite::before {
+    content: ""; position: absolute; left: -5px; top: -4px; width: 9px; height: 9px;
+    border-radius: 50%; background: #C47A3A; box-shadow: 0 0 0 1px #1A100C;
   }
   .overlay {
     position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
@@ -122,7 +148,7 @@
     </header>
     <div id="rail"></div>
     <footer id="bar">
-      <button id="undo" type="button">Undo</button>
+      <button id="undo" type="button" aria-label="Undo. Minus one skewer, and it stays spent.">−1 <i class="bite"></i></button>
       <button id="restart" type="button">Restart</button>
       <button id="menu" type="button">Menu</button>
     </footer>
@@ -170,7 +196,7 @@
         <h2 id="stuck-copy">No remaining sequence can serve every ticket.</h2>
         <p id="stuck-detail">Undo puts the food back. The skewer from that serve stays spent.</p>
         <div class="row">
-          <button id="stuck-undo" type="button" class="primary">Undo</button>
+          <button id="stuck-undo" type="button" class="primary" aria-label="Undo. Minus one skewer, and it stays spent.">−1 <i class="bite"></i></button>
           <button id="stuck-restart" type="button">Restart</button>
         </div>
       </div>

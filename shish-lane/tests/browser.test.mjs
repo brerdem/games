@@ -250,7 +250,8 @@ test('two undos leave both spares spent once each, and a one-star clear is reach
     assert.equal(twice.skewers, before.budget - 2);
     assert.equal(twice.undos, 2);
     assert.equal(twice.stuck, false);
-    assert.equal(await page.locator('#undo').innerText(), 'Undo');
+    assert.match(await page.locator('#undo').innerText(), /−1/);
+    assert.equal(await page.locator('#undo .bite').count(), 1);
     for (const id of ['T0', 'T1', 'T2', 'T3']) await thrust(page, id);
     const won = await page.evaluate(() => window.__shish.snapshot());
     assert.equal(won.won, true);
