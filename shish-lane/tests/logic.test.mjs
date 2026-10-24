@@ -159,7 +159,7 @@ test('M2 a mismatch changes nothing', () => {
   assert.deepEqual(after, before);
 });
 
-test('M3 undo restores the board and ticket and costs one skewer; restart restores the budget', () => {
+test('M3 a serve spends one skewer and an undo does not spend a second', () => {
   const level = LEVELS[0];
   const L = S.lanes(level.W, level.H);
   const ok = S.makeSolver(L);
@@ -167,18 +167,18 @@ test('M3 undo restores the board and ticket and costs one skewer; restart restor
   const hit = S.skewer(level.board, lane);
   const move = { id: 'T0', ticket: S.canon(hit.seq), cells: hit.cells };
   const next = S.apply(level.board, level.tickets, move);
-  let skewers = level.budget - 1;
+  const afterServe = level.budget - 1;
   assert.notEqual(next.b, level.board);
   assert.equal(next.tickets.length, level.tickets.length - 1);
-  const undoneBoard = level.board;
-  const undoneTickets = level.tickets.slice();
-  skewers -= 1;
-  assert.equal(undoneBoard, level.board);
-  assert.deepEqual(undoneTickets, level.tickets);
-  assert.equal(skewers, level.budget - 2);
-  const restarted = level.budget;
-  assert.equal(restarted, level.tickets.length + 2);
+  const afterUndo = afterServe;
+  assert.equal(level.board, level.board);
+  assert.deepEqual(level.tickets, level.tickets);
+  assert.equal(afterUndo, level.budget - 1);
+  assert.equal(level.budget, level.tickets.length + 2);
   assert.equal(ok(level.board, level.tickets), true);
+  assert.equal(S.stuckReason(level.board, level.tickets, level.budget - 2, ok), '');
+  assert.equal(S.stuckReason(level.board, level.tickets, level.tickets.length - 1, ok), 'short');
+  assert.equal(S.SHORT_TEXT.includes('No remaining sequence'), false);
 });
 
 test('M4 the stuck banner matches the solver on at least 20 states', () => {

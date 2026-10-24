@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { chromium } from 'playwright';
 
-const fileUrl = pathToFileURL(path.resolve('shish-lane/index.html')).href;
+const require = createRequire(new URL('../../package.json', import.meta.url));
+const { chromium } = require('playwright');
+const fileUrl = pathToFileURL(fileURLToPath(new URL('../index.html', import.meta.url))).href;
 const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium'].find((item) => fs.existsSync(item));
 
 async function launch() {
@@ -103,7 +104,7 @@ test('a mismatch is free, the stuck banner is exact, and undo costs one skewer',
     const undone = await page.evaluate(() => window.__shish.snapshot());
     assert.equal(undone.board, before.board);
     assert.deepEqual(undone.tickets, before.tickets);
-    assert.equal(undone.skewers, before.skewers - 2);
+    assert.equal(undone.skewers, before.skewers - 1);
     assert.equal(undone.stuck, false);
     await page.click('#restart');
     const restarted = await page.evaluate(() => window.__shish.snapshot());
@@ -218,6 +219,112 @@ test('a phone-class 4x throttle stays at or above 50fps during a swiped solve', 
     assert.ok(samples[0].scale <= 1.5);
     assert.ok(Math.abs(samples[0].buf - Math.round(samples[0].css * Math.min(1.5, 2))) <= 2);
     assert.ok(worst >= 50, `min fps ${worst}`);
+  } finally {
+    await browser.close();
+  }
+});
+
+async function thrust(page, id) {
+  await page.evaluate((lane) => window.__shish.commit(lane), id);
+  await page.waitForFunction(() => !window.__shish.animating(), null, { timeout: 4000 });
+}
+
+test('two undos leave both spares spent once each, and a one-star clear is reachable', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__shish.ready);
+    const before = await page.evaluate(() => window.__shish.snapshot());
+    await thrust(page, 'T0');
+    await page.click('#undo');
+    const once = await page.evaluate(() => window.__shish.snapshot());
+    assert.equal(once.board, before.board);
+    assert.deepEqual(once.tickets, before.tickets);
+    assert.equal(once.skewers, before.budget - 1);
+    assert.equal(once.undos, 1);
+    assert.equal(once.stuck, false);
+    await thrust(page, 'T0');
+    await page.click('#undo');
+    const twice = await page.evaluate(() => window.__shish.snapshot());
+    assert.equal(twice.skewers, before.budget - 2);
+    assert.equal(twice.undos, 2);
+    assert.equal(twice.stuck, false);
+    assert.equal(await page.locator('#undo').innerText(), 'Undo');
+    for (const id of ['T0', 'T1', 'T2', 'T3']) await thrust(page, id);
+    const won = await page.evaluate(() => window.__shish.snapshot());
+    assert.equal(won.won, true);
+    assert.equal(won.stars, 1);
+    assert.equal(won.undos, 2);
+    assert.equal(won.tickets.length, 0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a solvable board with too few skewers does not use the unsolvable banner', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__shish.ready);
+    for (let i = 0; i < 3; i++) {
+      await thrust(page, 'T0');
+      await page.click('#undo');
+    }
+    await page.waitForSelector('#stuck:not(.hidden)');
+    const snap = await page.evaluate(() => window.__shish.snapshot());
+    assert.equal(snap.banner, 'Not enough skewers to serve the remaining tickets.');
+    assert.equal(snap.banner.includes('No remaining sequence'), false);
+    assert.equal(await page.locator('#stuck-undo').isDisabled(), true);
+    assert.equal(snap.stuck, true);
+    assert.equal(snap.board.length > 0, true);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('pointercancel drops the gesture and does not thrust', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__shish.ready);
+    const before = await page.evaluate(() => window.__shish.snapshot());
+    const g = await page.evaluate(() => window.__shish.lanePoint('T0'));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: g.from.x, y: g.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: g.to.x, y: g.to.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    await page.waitForTimeout(80);
+    const after = await page.evaluate(() => window.__shish.snapshot());
+    assert.equal(after.moves, before.moves);
+    assert.equal(after.board, before.board);
+    assert.equal(after.skewers, before.skewers);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('top lane zones stay clear of the ticket rail at 320x568', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 320, height: 568 } });
+    for (let level = 1; level <= 11; level++) {
+      await page.goto(fileUrl + '?level=' + level);
+      await page.waitForFunction(() => window.__shish.ready);
+      await page.evaluate(() => window.__shish.dismiss());
+      await page.waitForTimeout(50);
+      const hit = await page.evaluate(() => {
+        const rail = document.getElementById('rail').getBoundingClientRect();
+        const tops = window.__shish.laneRects().filter((box) => box.id[0] === 'T');
+        const overlap = tops.filter((box) => box.x < rail.right && box.x + box.w > rail.left && box.y < rail.bottom && box.y + box.h > rail.top);
+        return { overlap: overlap.map((box) => box.id), count: tops.length, cell: window.__shish.cellSize() };
+      });
+      assert.equal(hit.count > 0, true, 'L' + level);
+      assert.deepEqual(hit.overlap, [], 'L' + level + ' ' + hit.overlap.join(','));
+    }
   } finally {
     await browser.close();
   }

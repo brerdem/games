@@ -7,7 +7,6 @@
   var ctx = canvas.getContext('2d');
   var stage = document.getElementById('stage');
   var rail = document.getElementById('rail');
-  var cost = document.getElementById('cost');
   var dpr = 1;
   var cssW = 390;
   var cssH = 844;
@@ -79,21 +78,25 @@
 
   function fit() {
     if (!state) return;
-    var hud = 72;
-    var railH = Math.max(52, rail.getBoundingClientRect().height || 52);
     var bar = 78;
     var gutter = 44;
-    var top = hud + railH;
+    var railBox = rail.getBoundingClientRect();
+    var stageBox = stage.getBoundingClientRect();
+    var railBottom = railBox.height ? railBox.bottom - stageBox.top : 124;
+    var bandTop = railBottom + gutter;
+    var bandBot = cssH - bar - gutter;
     var availW = cssW - gutter * 2;
-    var availH = cssH - top - bar - 8;
+    var availH = Math.max(state.H, bandBot - bandTop);
     var cell = Math.floor(Math.min(availW / state.W, availH / state.H));
-    if (cell < 36) cell = 36;
+    if (cell < 8) cell = 8;
     var w = cell * state.W;
     var h = cell * state.H;
+    var y = bandTop;
+    if (bandBot - bandTop > h) y = Math.round(bandTop + (bandBot - bandTop - h) / 2);
     layout = {
       cell: cell,
       x: Math.round((cssW - w) / 2),
-      y: Math.round(top + Math.max(0, availH - h) / 2),
+      y: y,
       w: w,
       h: h
     };
@@ -174,7 +177,7 @@
       pip.className = 'pip' + (i >= state.skewers ? ' spent' : '');
       pips.appendChild(pip);
     }
-    document.getElementById('undo').disabled = state.skewers < 1 || !state.stack.length;
+    document.getElementById('undo').disabled = !state.stack.length;
     document.getElementById('mute').textContent = progress.mute ? 'Muted' : 'Snd';
     renderTickets();
   }
@@ -297,7 +300,7 @@
     var outcome = null;
     if (!state.tickets.length) outcome = 'win';
     else if (!state.skewers) outcome = 'fail';
-    else if (SL.stuckNow(state.board, state.tickets, state.skewers, solver)) outcome = 'stuck';
+    else if (SL.stuckReason(state.board, state.tickets, state.skewers, solver)) outcome = 'stuck';
     startAnim('take', id, hit, ticket, letters, outcome);
     letters.forEach(function (ch, i) {
       setTimeout(function () { tone(220 * Math.pow(1.18, i), 0.05, 'square', 0.04); }, Math.min(70, i * 50));
@@ -365,9 +368,15 @@
   }
 
   function showStuck() {
-    document.getElementById('stuck-copy').textContent = SL.STUCK_TEXT;
+    var reason = SL.stuckReason(state.board, state.tickets, state.skewers, solver);
+    var unsolvable = reason === 'unsolvable';
+    document.getElementById('stuck-copy').textContent = unsolvable ? SL.STUCK_TEXT : SL.SHORT_TEXT;
+    document.getElementById('stuck-detail').textContent = state.stack.length
+      ? 'Undo puts the food back. The skewer from that serve stays spent.'
+      : 'Nothing left to undo.';
+    document.getElementById('stuck-undo').disabled = !state.stack.length;
     document.getElementById('stuck').classList.remove('hidden');
-    log('stuck');
+    log('stuck', { reason: reason || 'short' });
   }
 
   function showFail() {
@@ -376,20 +385,16 @@
   }
 
   function undo() {
-    if (!state.stack.length || state.skewers < 1 || anim) return;
+    if (!state.stack.length || anim) return;
     var prev = state.stack.pop();
     state.board = prev.board;
     state.tickets = prev.tickets.slice();
-    state.skewers -= 1;
     state.undos += 1;
     hideAll();
     if (state.lessons && state.lessons.length) showLesson(state.lessons[0]);
-    cost.classList.remove('show');
-    void cost.offsetWidth;
-    cost.classList.add('show');
     log('undo', { skewers: state.skewers });
     if (!state.skewers && state.tickets.length) showFail();
-    else if (SL.stuckNow(state.board, state.tickets, state.skewers, solver)) showStuck();
+    else if (SL.stuckReason(state.board, state.tickets, state.skewers, solver)) showStuck();
     syncChrome();
   }
 
@@ -832,8 +837,13 @@
     commit(d.id);
   }
 
+  function cancelDrag(event) {
+    if (!drag || event.pointerId !== drag.pointer) return;
+    drag = null;
+  }
+
   canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+  canvas.addEventListener('pointercancel', cancelDrag);
 
   window.addEventListener('keydown', function (event) {
     if (!state || overlayOpen() || anim) return;

@@ -88,16 +88,6 @@
     position: absolute; inset: 8px 2px auto; font-size: 11px; letter-spacing: .12em;
     color: #E8483B; border: 2px solid #E8483B; transform: rotate(-8deg); font-weight: 700;
   }
-  #cost {
-    position: absolute; left: 18px; bottom: 76px; z-index: 4; font-weight: 700;
-    color: #FF7A1A; font-size: 22px; pointer-events: none; opacity: 0;
-  }
-  #cost.show { animation: pop 420ms ease-out; }
-  @keyframes pop {
-    0% { opacity: 0; transform: translateY(6px); }
-    30% { opacity: 1; }
-    100% { opacity: 0; transform: translateY(-16px); }
-  }
   .overlay {
     position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
     background: rgba(20, 14, 12, .72); padding: 18px;
@@ -131,9 +121,8 @@
       <button id="mute" type="button">Snd</button>
     </header>
     <div id="rail"></div>
-    <div id="cost">−1</div>
     <footer id="bar">
-      <button id="undo" type="button">Undo −1</button>
+      <button id="undo" type="button">Undo</button>
       <button id="restart" type="button">Restart</button>
       <button id="menu" type="button">Menu</button>
     </footer>
@@ -153,7 +142,7 @@
         <h2>How to serve</h2>
         <p>Swipe inward from an edge. The skewer takes the first four foods in that lane, skipping empty squares.</p>
         <p>The sequence has to match an open ticket, forwards or backwards. A miss slides back and costs nothing.</p>
-        <p>Coal stops the skewer. A slab only spears along its length. Undo puts the food back and spends a skewer.</p>
+        <p>Coal stops the skewer. A slab only spears along its length. Undo puts the food back. The skewer from that serve stays spent.</p>
         <button id="help-close" type="button">Back</button>
       </div>
     </div>
@@ -179,9 +168,9 @@
     <div id="stuck" class="overlay hidden">
       <div class="card">
         <h2 id="stuck-copy">No remaining sequence can serve every ticket.</h2>
-        <p>Undo spends a skewer and puts the food back.</p>
+        <p id="stuck-detail">Undo puts the food back. The skewer from that serve stays spent.</p>
         <div class="row">
-          <button id="stuck-undo" type="button" class="primary">Undo −1</button>
+          <button id="stuck-undo" type="button" class="primary">Undo</button>
           <button id="stuck-restart" type="button">Restart</button>
         </div>
       </div>

@@ -4,7 +4,7 @@
 
 - Game ID: GF-20261024-01
 - Brief: v1, stored as `BRIEF.md`
-- A skewer enters from an edge and spears the first four foods in that lane. The sequence has to match an open ticket, read either way. Coal and slabs stop a thrust. The budget is tickets + 2, and undo costs the skewer it gives back.
+- A skewer enters from an edge and spears the first four foods in that lane. The sequence has to match an open ticket, read either way. Coal and slabs stop a thrust. The budget is tickets + 2. A serve spends one skewer. Undo puts the food and the ticket back and does not refund that skewer, and it does not charge a second one.
 
 ## Implementation
 
@@ -22,8 +22,8 @@
 | --- | --- | --- |
 | M1 Reference lines clear with ★★★ | PASS | All 11 lines, 0 undos, 2 skewers left |
 | M2 Mismatch costs nothing | PASS | L2 `L2` (AAAB) leaves board, tickets, and skewers unchanged |
-| M3 Undo costs 1, restart restores the budget | PASS | Fatal L2 `L0`, then Undo, then Restart |
-| M4 Stuck banner matches the solver | PASS | Every opening and every legal branch along each reference line. Banner text is "No remaining sequence can serve every ticket." |
+| M3 Undo costs 1 net, restart restores the budget | PASS | A serve spends 1. Undo restores the board and the ticket and leaves that skewer spent. Two undos, then the L1 line, earns ★. Restart restores the full budget |
+| M4 Stuck banner matches the solver | PASS | "No remaining sequence can serve every ticket." only when the solver says unsolvable. A solvable board with too few skewers says "Not enough skewers to serve the remaining tickets." The banner Undo is disabled when the stack is empty |
 | M5 Coal and slab stops | PASS | L8 `L0` stops on coal with `AB`. L8 `T2` stops on coal with nothing. L7 `L1` spears the slab. L7 `T1` stops in front of it |
 | M6 44 px lane ends, no thrust under 12 px | PASS | 360×800, 390×844, 430×932. L11 cell is 50 px at 390. An 8 px drag spends nothing |
 | M7 60 fps and commit ≤ 350 ms | PASS | Local min 60.0 of 60.0, 60.0, 60.0 at 390×844, DPR cap 1.5, buffer 585, 4× CPU. Commit duration is capped at 340 ms |
@@ -42,12 +42,25 @@
 - The grill bed is `#1A1412` so tomato `#E8483B` is 4.7:1 against it. `#E8483B` on the brief's `#2B2522` measures 3.9:1. The surround stays `#2B2522`.
 - Foods are drawn shapes: round tomato, square pepper, triangle onion. A slab is a wide bar with ⟷. Coal is a dark tile with ember dots.
 - The 80 ms food stagger is compressed so the whole commit stays inside 340 ms on a long lane. The pin still eases out and the foods still arrive one after another.
-- Stars are undos: 0 → ★★★, 1 → ★★, 2 → ★. An empty budget is the fail card, not the stuck banner, because undo cannot be paid.
+- Stars are undos: 0 → ★★★, 1 → ★★, 2 → ★. Two undos use the two spare skewers and a clear is still possible, so ★ can be earned. An empty budget is the fail card. The HUD button says Undo. The pip was already spent on the serve, so the button does not show a second −1.
+
+## QA revision 1
+
+Held for Game Finder. Not pushed. L7 is unchanged.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| SL-001 | An undo costs exactly 1 skewer net. The serve's skewer stays spent, and undo does not charge another | `game.js` undo. Button label is Undo | Serve, undo, serve, undo, then the L1 line. Skewers after the first undo are budget − 1. The clear is ★ | PASS |
+| SL-002 | L7 random-with-undo is over 16% on the exact measure | No level change | Waiting on the v1.1 board | HELD |
+| SL-003 | The unsolvable sentence is only for an unsolvable board. A short budget uses other copy. Undo on that card is disabled when the stack is empty | `logic.js` stuckReason, `game.js` showStuck | Three serve-and-undo cycles on L1 show the short-budget sentence and a disabled Undo | PASS |
+| SL-004 | pointercancel cancels the drag and does not commit | `game.js` cancelDrag | A touchCancel after a full inward drag leaves L1 unmoved | PASS |
+| SL-005 | Browser tests load Playwright from the repo package, and the page URL does not depend on the working directory | `tests/browser.test.mjs` | The suite passes when started from `/tmp` | PASS |
+| SL-006 | Top lane zones sit below the ticket rail | `game.js` fit | At 320×568, no T zone intersects the rail on L1–L11 | PASS |
 
 ## Testing
 
 - `node --test --test-timeout=180000 shish-lane/tests/logic.test.mjs shish-lane/tests/browser.test.mjs`
-- Result: 15 tests, 15 pass, 0 fail.
+- Result: 19 tests, 19 pass, 0 fail.
 - FPS: min 60.0 of 60.0, 60.0, 60.0. Scale 1.5, buffer 585.
 - Misfires: 0 / 100.
 - Not claimed from a device lab. The fps gate is the throttled desktop Chrome run the other games use.

@@ -15,6 +15,7 @@
     { W: 6, H: 6, board: 'AAABCCAAAACABAAABBbbBBaAA#CAACA#BACA', tickets: ['AAA', 'AAB', 'AAB', 'AABA', 'AABB', 'AABB', 'ABCC', 'ACA', 'ACB', 'CAC'], ref: ['R2', 'T1', 'B3', 'R4', 'R5', 'T2', 'L0', 'L1', 'L3', 'T0'], refSeq: ['AABB', 'AAA', 'AABA', 'CAC', 'ACB', 'AAB', 'ABCC', 'ACA', 'AABB', 'AAB'] }
   ];
   var STUCK_TEXT = 'No remaining sequence can serve every ticket.';
+  var SHORT_TEXT = 'Not enough skewers to serve the remaining tickets.';
 
   function lanes(W, H) {
     var L = [];
@@ -116,9 +117,17 @@
     return tickets.length + 2;
   }
 
-  // Stuck after a committed thrust. An empty budget is the fail state, not this banner.
+  // '' clear, 'unsolvable' when no sequence can finish, 'short' when the board can but the skewers cannot.
+  // An empty budget is the fail state, not either banner.
+  function stuckReason(board, tickets, skewers, ok) {
+    if (!(tickets.length > 0 && skewers > 0)) return '';
+    if (!ok(board, tickets)) return 'unsolvable';
+    if (skewers < tickets.length) return 'short';
+    return '';
+  }
+
   function stuckNow(board, tickets, skewers, ok) {
-    return tickets.length > 0 && skewers > 0 && (!ok(board, tickets) || skewers < tickets.length);
+    return stuckReason(board, tickets, skewers, ok) !== '';
   }
 
   function levels() {
@@ -142,6 +151,7 @@
   root.ShishLogic = {
     CAP: CAP,
     STUCK_TEXT: STUCK_TEXT,
+    SHORT_TEXT: SHORT_TEXT,
     lanes: lanes,
     canon: canon,
     isSlab: isSlab,
@@ -152,6 +162,7 @@
     makeSolver: makeSolver,
     laneById: laneById,
     budgetOf: budgetOf,
+    stuckReason: stuckReason,
     stuckNow: stuckNow,
     levels: levels
   };
