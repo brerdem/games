@@ -17,6 +17,7 @@ const GAMES = [
   'spillproof',
   'foldprint',
   'knock-on',
+  'shish-lane',
 ];
 const PHONE = 390 / 844;
 

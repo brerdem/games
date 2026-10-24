@@ -88,3 +88,15 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - name: Knock-On logic and browser gate
         run: node --test --test-timeout=180000 knock-on/tests/logic.test.mjs knock-on/tests/browser.test.mjs
+
+  shish-lane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Shish Lane logic and browser gate
+        run: node --test --test-timeout=180000 shish-lane/tests/logic.test.mjs shish-lane/tests/browser.test.mjs

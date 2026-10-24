@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#2B2522" />
+<title>Shish Lane</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%232B2522'/%3E%3Ccircle cx='5' cy='8' r='2.2' fill='%23E8483B'/%3E%3Crect x='8' y='6' width='4' height='4' fill='%234DB34A'/%3E%3C/svg%3E" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #140E0C; overflow: hidden; }
+  body {
+    min-height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    color: #F3E6C8;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * 390 / 844));
+    height: min(100dvh, calc(100vw * 844 / 390));
+    max-height: 100dvh;
+    background: #2B2522;
+    overflow: hidden;
+  }
+  @media (max-width: 520px), (max-height: 520px) {
+    #stage { width: 100vw; height: 100dvh; max-height: none; }
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; z-index: 1; }
+  button {
+    font-family: inherit;
+    color: #F3E6C8;
+    background: #3A312C;
+    border: 1px solid #C9A36A;
+    border-radius: 14px;
+    min-height: 48px;
+    min-width: 48px;
+    padding: 0 12px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .38; cursor: default; }
+  button.primary { background: #FF7A1A; color: #1A100C; border-color: #FF7A1A; font-weight: 700; }
+  #hud, #bar, #rail {
+    position: absolute; left: 0; right: 0; z-index: 2; pointer-events: none;
+  }
+  #hud, #bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  #hud { top: 0; min-height: 72px; align-items: flex-start; }
+  #bar {
+    bottom: 0; min-height: 72px; justify-content: space-between;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  #hud button, #bar button { pointer-events: auto; }
+  #titles { flex: 1; min-width: 0; }
+  #kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #FF7A1A; }
+  #name { font-size: 22px; line-height: 1.05; }
+  .pips { display: flex; gap: 4px; margin-top: 4px; }
+  .pip { width: 14px; height: 22px; border-radius: 7px; background: #C5CCD1; box-shadow: inset 0 -3px 0 rgba(0,0,0,.28); }
+  .pip.spent { background: transparent; box-shadow: none; border: 1px dashed #8A8178; }
+  #mute { width: 56px; padding: 0; }
+  #rail {
+    top: 72px; display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 4px;
+    align-content: flex-start;
+  }
+  #rail.shake { animation: shake 280ms linear; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+  }
+  .ticket {
+    flex: 0 0 auto; min-width: 42px; height: 46px; padding: 3px 5px 2px;
+    background: #F3E6C8; color: #2A2118; border-radius: 4px 4px 8px 8px;
+    box-shadow: 0 2px 0 #C9A36A; text-align: center; position: relative;
+  }
+  .ticket .word { font-size: 13px; letter-spacing: .04em; font-weight: 700; }
+  .ticket .shapes { height: 16px; }
+  .ticket.served { background: #E7D7B0; }
+  .ticket.served .word { font-size: 10px; letter-spacing: .08em; }
+  .ticket.hot { outline: 2px solid #FF7A1A; }
+  .stamp {
+    position: absolute; inset: 8px 2px auto; font-size: 11px; letter-spacing: .12em;
+    color: #E8483B; border: 2px solid #E8483B; transform: rotate(-8deg); font-weight: 700;
+  }
+  #cost {
+    position: absolute; left: 18px; bottom: 76px; z-index: 4; font-weight: 700;
+    color: #FF7A1A; font-size: 22px; pointer-events: none; opacity: 0;
+  }
+  #cost.show { animation: pop 420ms ease-out; }
+  @keyframes pop {
+    0% { opacity: 0; transform: translateY(6px); }
+    30% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-16px); }
+  }
+  .overlay {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 14, 12, .72); padding: 18px;
+  }
+  .overlay.hidden { display: none; }
+  #rotate.overlay { z-index: 7; background: #1A1412; }
+  .card {
+    width: min(320px, 100%); background: #F3E6C8; color: #2A2118; border-radius: 18px;
+    padding: 18px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 24px; font-weight: 700; line-height: 1.15; }
+  .card p { margin: 0 0 12px; line-height: 1.35; }
+  .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card button { color: #F3E6C8; }
+  .card button.primary { color: #1A100C; }
+  #levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0 12px; }
+  #levels button { min-width: 0; padding: 0; }
+  .stars { letter-spacing: .18em; color: #C4552A; font-size: 22px; }
+  #stuck .card { outline: 3px solid #FF7A1A; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <header id="hud">
+      <div id="titles">
+        <div id="kicker">Grill 1</div>
+        <div id="name">First Order</div>
+        <div class="pips" id="pips"></div>
+      </div>
+      <button id="mute" type="button">Snd</button>
+    </header>
+    <div id="rail"></div>
+    <div id="cost">−1</div>
+    <footer id="bar">
+      <button id="undo" type="button">Undo −1</button>
+      <button id="restart" type="button">Restart</button>
+      <button id="menu" type="button">Menu</button>
+    </footer>
+    <div id="rotate" class="overlay hidden"><div class="card"><h2>Turn upright</h2><p>Shish Lane is a tall grill. Rotate the phone.</p></div></div>
+    <div id="menu-panel" class="overlay hidden">
+      <div class="card">
+        <h2>Grills</h2>
+        <div id="levels"></div>
+        <div class="row">
+          <button id="how" type="button">How to serve</button>
+          <button id="resume" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+    <div id="help" class="overlay hidden">
+      <div class="card">
+        <h2>How to serve</h2>
+        <p>Swipe inward from an edge. The skewer takes the first four foods in that lane, skipping empty squares.</p>
+        <p>The sequence has to match an open ticket, forwards or backwards. A miss slides back and costs nothing.</p>
+        <p>Coal stops the skewer. A slab only spears along its length. Undo puts the food back and spends a skewer.</p>
+        <button id="help-close" type="button">Back</button>
+      </div>
+    </div>
+    <div id="lesson" class="overlay hidden">
+      <div class="card">
+        <h2 id="lesson-title">Coal</h2>
+        <p id="lesson-copy">Coal stops the skewer.</p>
+        <button id="lesson-ok" type="button" class="primary">Got it</button>
+      </div>
+    </div>
+    <div id="win" class="overlay hidden">
+      <div class="card">
+        <h2>Served</h2>
+        <p class="stars" id="win-stars"></p>
+        <p id="win-copy"></p>
+        <div class="row">
+          <button id="win-next" type="button" class="primary">Next</button>
+          <button id="win-retry" type="button">Restart</button>
+          <button id="win-menu" type="button">Grills</button>
+        </div>
+      </div>
+    </div>
+    <div id="stuck" class="overlay hidden">
+      <div class="card">
+        <h2 id="stuck-copy">No remaining sequence can serve every ticket.</h2>
+        <p>Undo spends a skewer and puts the food back.</p>
+        <div class="row">
+          <button id="stuck-undo" type="button" class="primary">Undo −1</button>
+          <button id="stuck-restart" type="button">Restart</button>
+        </div>
+      </div>
+    </div>
+    <div id="fail" class="overlay hidden">
+      <div class="card">
+        <h2>Out of skewers</h2>
+        <p>Orders are still open.</p>
+        <div class="row">
+          <button id="fail-restart" type="button" class="primary">Restart</button>
+          <button id="fail-menu" type="button">Grills</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
