@@ -107,6 +107,7 @@ At 360×640, L9 is 45 px again, with the ten orders still in two rows of coloure
 
 Screenshots:
 
+- `/opt/cursor/artifacts/shish-lane-360x640-l9.png`
 - `/opt/cursor/artifacts/shish-lane-390-l1.png`
 - `/opt/cursor/artifacts/shish-lane-390-l11.png`
 - `/opt/cursor/artifacts/shish-lane-390-serve.png`
