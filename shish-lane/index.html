@@ -87,6 +87,13 @@
   .ticket .word { font-size: 13px; letter-spacing: .06em; font-weight: 700; line-height: 1.1; }
   .ticket .shapes { display: flex; gap: 1px; justify-content: center; align-items: flex-end; height: 24px; }
   .ticket .glyph { display: block; width: 20px; height: 20px; }
+  @media (max-height: 700px) {
+    .ticket { min-width: 0; min-height: 0; height: auto; padding: 2px 3px 1px; }
+    .ticket .glyph { width: 13px; height: 13px; }
+    .ticket .shapes { height: 15px; gap: 0; }
+    .ticket .word { font-size: 11px; letter-spacing: 0; line-height: 1; }
+    .stamp { font-size: 9px; bottom: 1px; }
+  }
   @media (max-width: 359px) {
     .ticket { flex: 1 1 15%; min-width: 0; min-height: 0; padding: 2px 1px 1px; }
     .ticket .glyph { width: 12px; height: 12px; }

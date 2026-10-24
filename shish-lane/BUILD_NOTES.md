@@ -69,6 +69,26 @@ No rule changes and no level changes. The 1-net undo rule is unchanged: a serve 
 | SL-009 | 44 px lane zones at 320×568 for L8–L11 | Compact ticket row below 360 px wide | L8 and L10 are 44 px. L9 and L11 stay 38 px. A 6-column board at 44 px is 264 px, and the two 44 px side gutters need 88 px more, which is 352 px and does not fit a 320 px screen. At 390, L11 stays 50 px | PASS |
 | Tests | Browser tests need the repo install | Note only | `npm install` provides Playwright. Without `node_modules` the browser file cannot resolve it | PASS |
 
+## QA revision 3
+
+SL-010 only. No rule, level, or other visual changes. Tall screens keep the larger ticket glyphs. When the viewport is 700 px tall or shorter, the rail uses 13 px glyphs and a shorter ticket so the board is not pushed down.
+
+Cell size is the board square in CSS pixels. R1 is commit 43d527e. R3 is this pass. Every R3 cell is at least the R1 cell.
+
+| Viewport | R1 L1–L11 | R3 L1–L11 |
+| --- | --- | --- |
+| 320×568 | 58, 58, 46, 46, 46, 46, 46, 38, 38, 38, 38 | 58, 58, 46, 58, 46, 46, 46, 45, 38, 45, 38 |
+| 360×640 | 68, 68, 54, 68, 54, 54, 54, 50, 45, 50, 45 | 68, 68, 54, 68, 54, 54, 54, 54, 45, 54, 45 |
+| 360×800 | 68, 68, 54, 68, 54, 54, 54, 54, 45, 54, 45 | 68, 68, 54, 68, 54, 54, 54, 54, 45, 54, 45 |
+| 390×844 | 75, 75, 60, 75, 60, 60, 60, 60, 50, 60, 50 | 75, 75, 60, 75, 60, 60, 60, 60, 50, 60, 50 |
+| 430×932 | 85, 85, 68, 85, 68, 68, 68, 68, 57, 68, 57 | 85, 85, 68, 85, 68, 68, 68, 68, 57, 68, 57 |
+
+At 360×640, L9 is 45 px again, with the ten orders still in two rows of coloured glyphs and letters. At 320×568, L9 and L11 stay 38 px, which is the width limit of six columns inside two 44 px side gutters, and matches R1. 360×800 and the taller phones keep the R2 rail.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| SL-010 | Compact the ticket rail when the screen is short, so the board cells recover | `index.html` ticket rules under 700 px of height | The table above. L9 at 360×640 is 45 px. Tickets still show a glyph and the order letters | PASS |
+
 ## Testing
 
 - Install first: `npm install` at the repo root. The browser suite loads Playwright from that install.
