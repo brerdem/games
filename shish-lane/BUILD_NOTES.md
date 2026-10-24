@@ -30,7 +30,7 @@
 | M8 Pack is exact and non-isomorphic | PASS | Boards and tickets match `pack_final_11.json`. 11 distinct mirror / 180° / letter-permutation keys |
 | Fidelity, 400 cases | PASS | 1,321 distinct legal thrusts, 0 mismatches, solver agrees |
 | Swipe misfires | PASS | 0 / 100 on L11 at 390×844, with 3 px of perpendicular wobble |
-| Lazy play from L7 | PASS | Sandbox seed 11, N=300. Lazy max 25.3, 13.0, 14.0, 15.3, 8.3%. Every non-random policy ≤ 30%. RAND+probe 15.3, 7.0, 8.0, 6.3, 1.3% (≤ 16%) |
+| Lazy play from L7 | PASS | v1.1 exact odds, 1-net undo. L7 RAND+probe 9.3%, lazy max 21.3% (MINDIS+probe). L8–L11 lazy max 14.3, 13.8, 16.7, 8.2%. All ≤ 30%. RAND+probe ≤ 16% |
 | L11 is strictly hardest | PASS | On state count (549), fatal share (0.442), lazy max, and RAND+probe |
 | Portrait frame and DPR cap | PASS | 1440×900 stage 416×900. 1920×1080 stage 499×1080. Buffer scale 1.5 under DPR 2 |
 | Hint | DROPPED | The brief forbids a hint in the MVP |
@@ -51,7 +51,7 @@ Held for Game Finder. Not pushed. L7 is unchanged.
 | ID | Action | What changed | Test | Status |
 | --- | --- | --- | --- | --- |
 | SL-001 | An undo costs exactly 1 skewer net. The serve's skewer stays spent, and undo does not charge another | `game.js` undo. Button label is Undo | Serve, undo, serve, undo, then the L1 line. Skewers after the first undo are budget − 1. The clear is ★ | PASS |
-| SL-002 | L7 random-with-undo is over 16% on the exact measure | No level change | Waiting on the v1.1 board | HELD |
+| SL-002 | Replace L7 only. 5×5, 1 coal, 2 slabs, tickets ABA ACA ACB BCB CABC CACC CBCC, budget 9 | `logic.js` L7, `BRIEF-v1.1.md`, `tests/pack_v1_1.json` | The reference line clears with ★★★. Exact RAND+probe 9.3%, lazy max 21.3%. L1–L6 and L8–L11 boards unchanged. L11 stays hardest on states, lazy max and RAND+probe | PASS |
 | SL-003 | The unsolvable sentence is only for an unsolvable board. A short budget uses other copy. Undo on that card is disabled when the stack is empty | `logic.js` stuckReason, `game.js` showStuck | Three serve-and-undo cycles on L1 show the short-budget sentence and a disabled Undo | PASS |
 | SL-004 | pointercancel cancels the drag and does not commit | `game.js` cancelDrag | A touchCancel after a full inward drag leaves L1 unmoved | PASS |
 | SL-005 | Browser tests load Playwright from the repo package, and the page URL does not depend on the working directory | `tests/browser.test.mjs` | The suite passes when started from `/tmp` | PASS |
@@ -61,7 +61,7 @@ Held for Game Finder. Not pushed. L7 is unchanged.
 
 - `node --test --test-timeout=180000 shish-lane/tests/logic.test.mjs shish-lane/tests/browser.test.mjs`
 - Result: 19 tests, 19 pass, 0 fail.
-- FPS: min 60.0 of 60.0, 60.0, 60.0. Scale 1.5, buffer 585.
+- FPS: min 59.6 of 59.6, 60.0, 60.0. Scale 1.5, buffer 585. Gate is 50.
 - Misfires: 0 / 100.
 - Not claimed from a device lab. The fps gate is the throttled desktop Chrome run the other games use.
 - Repro: open `shish-lane/index.html`. `?level=7` opens Slabs. Swipe inward from an edge past 40% of a cell.

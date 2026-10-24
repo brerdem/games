@@ -230,22 +230,25 @@ test('M5 coal stops every thrust and a slab stops only a column', () => {
 
   const slab = LEVELS[6];
   const slabLanes = S.lanes(slab.W, slab.H);
-  const along = S.inspect(slab.board, S.laneById(slabLanes, 'L1'));
-  assert.equal(along.seq[0], 'C');
-  assert.ok(along.cells.includes(6));
-  const across = S.inspect(slab.board, S.laneById(slabLanes, 'T1'));
+  const along = S.inspect(slab.board, S.laneById(slabLanes, 'L4'));
+  assert.ok(along.cells.includes(22));
+  const across = S.inspect(slab.board, S.laneById(slabLanes, 'T3'));
   assert.equal(across.stop, 'slab');
-  assert.equal(across.cells.includes(6), false);
+  assert.equal(across.cells.includes(8), false);
   assert.equal(across.seq, 'C');
+  const coalRow = S.inspect(slab.board, S.laneById(slabLanes, 'L1'));
+  assert.equal(coalRow.stop, 'coal');
+  assert.equal(coalRow.seq, '');
 });
 
 test('M8 the eleven boards match the pack and are pairwise non-isomorphic', () => {
   const raw = JSON.parse(fs.readFileSync(new URL('./fid_cases.json', import.meta.url), 'utf8'));
   assert.equal(raw.length, 400);
   const pack = JSON.parse(fs.readFileSync(new URL('./pack_final_11.json', import.meta.url), 'utf8'));
+  const v11 = JSON.parse(fs.readFileSync(new URL('./pack_v1_1.json', import.meta.url), 'utf8'));
   const keys = new Set();
   for (const level of LEVELS) {
-    const row = pack[String(level.n)];
+    const row = level.n === 7 ? v11['7'] : pack[String(level.n)];
     assert.equal(level.board, row.board);
     assert.equal(level.W, row.W);
     assert.equal(level.H, row.H);
@@ -266,38 +269,75 @@ test('from L7 every lazy policy stays at or under 30 percent and L11 is strictly
     fatals.push(fatalShare(level, lanes, ok));
     console.log(`L${level.n} states ${states.at(-1)} fatal ${fatals.at(-1).toFixed(3)}`);
   }
-  assert.deepEqual(states, [24, 77, 35, 44, 77, 231, 218, 202, 237, 120, 549]);
-  const published = [0.100, 0.317, 0.306, 0.264, 0.221, 0.459, 0.325, 0.321, 0.356, 0.365, 0.442];
+  assert.deepEqual(states, [24, 77, 35, 44, 77, 231, 91, 202, 237, 120, 549]);
+  const published = [0.100, 0.317, 0.306, 0.264, 0.221, 0.459, 0.333, 0.321, 0.356, 0.365, 0.442];
   fatals.forEach((value, i) => assert.ok(Math.abs(value - published[i]) < 0.002, `L${i + 1} fatal ${value}`));
 
   const run = spawnSync('python3', ['-c', `
 import json, sys
 sys.path.insert(0, ${JSON.stringify(new URL('./', import.meta.url).pathname)})
 import sandbox_lib as lib
-pack = json.load(open(${JSON.stringify(new URL('./pack_final_11.json', import.meta.url).pathname)}))
+pack = json.load(open(${JSON.stringify(new URL('./pack_v1_1.json', import.meta.url).pathname)}))
+pols = ['PLY1','COVER','MINDIS','LONG','SHORT','ROWS','COLS','PLY2']
+def exact(lv, pol, probe):
+    memo = {}
+    def rec(b, tk, used, banned):
+        if not tk: return 1.0
+        key = (b, tk, used, banned)
+        if key in memo: return memo[key]
+        opts = [m for m in lv.legal(b, tk) if (b, m[2]) not in banned]
+        if not opts:
+            memo[key] = 0.0
+            return 0.0
+        best = None
+        chosen = []
+        for m in opts:
+            sc = 0 if pol == 'RAND' else lib.score_move(lv, b, tk, m, pol, opts)
+            if best is None or sc > best:
+                best = sc
+                chosen = [m]
+            elif sc == best:
+                chosen.append(m)
+        p = 0.0
+        for m in chosen:
+            b2, t2 = lv.step(b, tk, m)
+            if t2 and not lv.ok(b2, t2):
+                if probe and used < 2:
+                    p += rec(b, tk, used + 1, banned | frozenset([(b, m[2])]))
+            else:
+                p += rec(b2, t2, used, banned)
+        p /= len(chosen)
+        memo[key] = p
+        return p
+    return rec(lv.board, lv.tickets, 0, frozenset())
 out = {}
 for n in range(7, 12):
     row = pack[str(n)]
     lv = lib.Level(row['W'], row['H'], row['board'], row['tickets'])
-    rates = lib.rates(lv, seeds=300, seed=11)
-    lazy = {k: v for k, v in rates.items() if 'hint' not in k}
-    out[n] = {'lazy': max(lazy.values()), 'rand': rates['RAND+probe'], 'pols': lazy}
+    vals = {}
+    for pol in pols:
+        for probe in (False, True):
+            vals[pol + ('+probe' if probe else '')] = exact(lv, pol, probe)
+    out[n] = {'lazy': max(vals.values()), 'rand': exact(lv, 'RAND', True), 'by': max(vals, key=vals.get), 'pols': vals}
 print(json.dumps(out))
 `], { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
   const rates = JSON.parse(run.stdout.trim().split('\n').at(-1));
-  const hardest = ['states', 'fatal'];
+  const l7 = rates['7'];
+  assert.ok(Math.abs(l7.rand - 0.093) < 0.002, `L7 RAND+probe ${l7.rand}`);
+  assert.ok(Math.abs(l7.lazy - 0.213) < 0.002, `L7 lazy ${l7.lazy}`);
+  assert.equal(l7.by, 'MINDIS+probe');
+  const hardest = ['states'];
   for (const n of [7, 8, 9, 10, 11]) {
     const row = rates[String(n)];
     for (const [name, value] of Object.entries(row.pols)) {
-      if (name.startsWith('RAND')) continue;
       assert.ok(value <= 0.30, `L${n} ${name} ${value}`);
     }
     assert.ok(row.rand <= 0.16, `L${n} RAND+probe ${row.rand}`);
-    console.log(`L${n} lazy ${row.lazy.toFixed(3)} RAND+probe ${row.rand.toFixed(3)}`);
+    console.log(`L${n} lazy ${(row.lazy * 100).toFixed(1)}% RAND+probe ${(row.rand * 100).toFixed(1)}% ${row.by}`);
   }
   if ([7, 8, 9, 10].every((n) => rates[String(n)].lazy > rates['11'].lazy)) hardest.push('lazy');
   if ([7, 8, 9, 10].every((n) => rates[String(n)].rand > rates['11'].rand)) hardest.push('rand');
   console.log('L11 hardest on ' + hardest.join(', '));
-  assert.ok(hardest.length >= 2);
+  assert.ok(hardest.includes('lazy') && hardest.includes('rand'));
 });
