@@ -123,6 +123,7 @@
   }
 
   var goalBalls = {};
+  var finishCache = new Map();
 
   function goalBall(level, depth) {
     var cache = goalBalls[level.n];
@@ -176,21 +177,34 @@
     step();
   }
 
+  function prewarm(level) {
+    canFinish(level.plates, level.budget, level);
+    var moves = legalMoves(level.plates);
+    for (var i = 0; i < moves.length; i++) {
+      canFinish(apply(level.plates, moves[i], level.sided), level.budget - 1, level);
+    }
+  }
+
   function canFinish(plates, flipsLeft, level) {
     if (isGoal(plates)) return true;
     if (flipsLeft <= 0) return false;
+    var memoKey = level.n + '#' + flipsLeft + '#' + canonKey(plates);
+    if (finishCache.has(memoKey)) return finishCache.get(memoKey);
     var here = canonKey(plates);
     var cache = goalBalls[level.n];
     var goalSide = cache ? Math.min(cache.depth, flipsLeft) : Math.floor(flipsLeft / 2);
     var stateSide = flipsLeft - goalSide;
     var goals = goalBall(level, goalSide);
-    if (goals.has(here) && goals.get(here) <= goalSide) return true;
-    if (stateSide <= 0) return false;
-    var near = expand([here], stateSide, level.sided);
-    for (var key of near.keys()) {
-      if (goals.has(key) && goals.get(key) + near.get(key) <= flipsLeft) return true;
+    var answer = false;
+    if (goals.has(here) && goals.get(here) <= goalSide) answer = true;
+    else if (stateSide > 0) {
+      var near = expand([here], stateSide, level.sided);
+      for (var key of near.keys()) {
+        if (goals.has(key) && goals.get(key) + near.get(key) <= flipsLeft) { answer = true; break; }
+      }
     }
-    return false;
+    finishCache.set(memoKey, answer);
+    return answer;
   }
 
   function stuckText(flipsLeft) {
@@ -228,6 +242,7 @@
     isGoal: isGoal,
     canFinish: canFinish,
     warm: warm,
+    prewarm: prewarm,
     stuckText: stuckText,
     twoSided: twoSided,
     levels: levels

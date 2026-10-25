@@ -124,6 +124,8 @@ test('pointercancel does not flip, and a stuck line uses the exact banner', asyn
     const stuck = await page.evaluate(() => window.__turn.snapshot());
     assert.equal(stuck.banner, "Can't finish in 3 flips — undo or restart");
     assert.equal(stuck.stuck, true);
+    assert.equal(await page.locator('#stuck-undo').count(), 0);
+    assert.equal(await page.locator('#stuck-restart').count(), 1);
   } finally {
     await browser.close();
   }
@@ -144,10 +146,84 @@ test('burnt and golden bands read at 320 and 390', async () => {
       const underGold = sample.under[0] > 180 && sample.under[1] > 120;
       assert.equal(upDark, true, width + ' up ' + sample.up.join(','));
       assert.equal(underGold, true, width + ' under ' + sample.under.join(','));
+      const bottom = await page.evaluate(() => window.__turn.sample(2, 0));
+      assert.ok(contrast(bottom.up, bottom.under) >= 4.5, width + ' depth4 ' + contrast(bottom.up, bottom.under).toFixed(2));
       const plate = await page.evaluate(() => window.__turn.plateWidth());
       assert.ok(plate >= 44, 'plate ' + plate);
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+function contrast(a, b) {
+  function lin(c) {
+    c /= 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }
+  function lum(rgb) {
+    return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  }
+  const left = lum(a);
+  const right = lum(b);
+  return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+}
+
+test('a queued over-cap move is rejected and the keyboard sequence stays within 4', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    await page.evaluate(() => {
+      window.__turn.commit(2, 1, 1);
+      window.__turn.commit(2, 3, 0);
+      window.__turn.commit(1, 2, 0);
+    });
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    const queued = await page.evaluate(() => window.__turn.snapshot());
+    assert.ok(queued.maxPlate <= 4, JSON.stringify(queued.plates));
+    assert.ok(queued.rejects >= 1, 'rejects ' + queued.rejects);
+    assert.equal(queued.used, 2);
+    await page.evaluate(() => window.__turn.load(1));
+    await page.waitForFunction(() => window.__turn.ready && window.__turn.snapshot().used === 0);
+    for (const key of ['3', 'q', '2', '3', 'e', '1', '2', 'w', '1']) await page.keyboard.press(key);
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    const keyed = await page.evaluate(() => window.__turn.snapshot());
+    assert.ok(keyed.maxPlate <= 4, JSON.stringify(keyed.plates));
+    assert.ok(keyed.rejects >= 1, 'key rejects ' + keyed.rejects);
+    assert.equal(errors.length, 0, errors.join('\n'));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('L4 undo steps back one flip at a time', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=4');
+    await page.waitForFunction(() => window.__turn.ready);
+    await page.evaluate(() => window.__turn.dismiss());
+    const start = await page.evaluate(() => window.__turn.snapshot());
+    await page.evaluate(() => window.__turn.commit(2, 2, 0));
+    await page.waitForFunction(() => window.__turn.snapshot().used === 1 && !window.__turn.animating());
+    const once = await page.evaluate(() => window.__turn.snapshot());
+    await page.evaluate(() => window.__turn.commit(0, 1, 1));
+    await page.waitForFunction(() => window.__turn.snapshot().used === 2 && !window.__turn.animating());
+    await page.click('#undo');
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().undos === 1);
+    const backOne = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(JSON.stringify(backOne.plates), JSON.stringify(once.plates));
+    await page.click('#undo');
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().undos === 2);
+    const backTwo = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(JSON.stringify(backTwo.plates), JSON.stringify(start.plates));
+    assert.equal(backTwo.flips, start.budget - 4);
+    assert.notEqual(JSON.stringify(backOne.plates), JSON.stringify(start.plates));
   } finally {
     await browser.close();
   }
@@ -159,19 +235,68 @@ test('drag misfires stay under 3 per 100', async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await context.newPage();
     const session = await context.newCDPSession(page);
-    await page.goto(fileUrl + '?level=1');
-    await page.waitForFunction(() => window.__turn.ready);
+    const plan = [];
+    for (const level of [1, 4, 9, 10]) {
+      for (let i = 0; i < 25; i++) {
+        plan.push({
+          level: level,
+          fx: [0.2, 0.5, 0.8][i % 3],
+          fy: [0.12, 0.5, 0.82][i % 3]
+        });
+      }
+    }
     let misses = 0;
-    for (let i = 0; i < 100; i++) {
-      await page.evaluate(() => window.__turn.load(1));
-      await page.waitForFunction(() => window.__turn.ready && window.__turn.snapshot().used === 0);
-      const point = await page.evaluate(() => window.__turn.dragMove(2, 1, 1));
-      await drag(page, session, point.from, point.to, 3);
-      const used = await page.evaluate(() => window.__turn.snapshot().used);
-      if (used !== 1) misses += 1;
+    let loaded = 0;
+    for (const item of plan) {
+      if (loaded !== item.level) {
+        await page.goto(fileUrl + '?level=' + item.level);
+        await page.waitForFunction(() => window.__turn.ready);
+        await page.evaluate(() => window.__turn.dismiss());
+        loaded = item.level;
+      } else {
+        await page.evaluate(() => window.__turn.reset());
+      }
+      const point = await page.evaluate((spec) => {
+        const plates = window.__turn.snapshot().plates;
+        let choice = null;
+        for (let i = 0; i < plates.length; i++) {
+          for (let d = 1; d <= Math.min(3, plates[i].length); d++) {
+            for (let j = 0; j < plates.length; j++) {
+              if (j !== i && plates[j].length + d <= 4) choice = [i, d, j];
+            }
+          }
+        }
+        const spot = window.__turn.dragMove(choice[0], choice[1], choice[2], spec.fx, spec.fy);
+        return { from: spot.from, to: spot.to, expect: JSON.stringify(spot.expect) };
+      }, item);
+      await drag(page, session, point.from, point.to, 2);
+      const got = await page.evaluate(() => JSON.stringify(window.__turn.snapshot().plates));
+      if (got !== point.expect) misses += 1;
     }
     console.log(`turnover misfires ${misses} / 100`);
     assert.ok(misses < 3, 'misfires ' + misses);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a tap on a pancake then a tap on a plate flips', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    const point = await page.evaluate(() => window.__turn.dragMove(2, 1, 1));
+    async function tap(at) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    await tap(point.from);
+    await tap(point.to);
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().used === 1);
+    assert.equal((await page.evaluate(() => window.__turn.snapshot())).used, 1);
   } finally {
     await browser.close();
   }

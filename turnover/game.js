@@ -76,13 +76,17 @@
     var bar = 68;
     var gap = count > 3 ? 8 : 12;
     var plateW = Math.floor((cssW - 16 - gap * (count - 1)) / count);
-    var room = cssH - hud - bar - 28;
-    var cakeH = Math.max(36, Math.min(cssH < 700 ? 44 : 54, Math.floor(room / 4)));
+    var room = cssH - hud - bar - 36;
+    var cakeH = Math.max(40, Math.min(cssH < 700 ? 48 : 68, Math.floor(room / 5)));
+    var stackH = 4 * (cakeH + 4);
+    var base = Math.round((hud + 12 + cssH - bar) / 2 + stackH / 2);
+    if (base - stackH < hud + 4) base = hud + 4 + stackH;
+    if (base > cssH - bar - 8) base = cssH - bar - 8;
     var total = plateW * count + gap * (count - 1);
     geom = {
       hud: hud, bar: bar, gap: gap, plateW: plateW, cakeH: cakeH,
       x0: Math.round((cssW - total) / 2),
-      base: cssH - bar - 16
+      base: base
     };
   }
 
@@ -99,7 +103,7 @@
       n: level.n, name: level.name, level: level,
       plates: TL.clone(level.plates),
       flips: level.budget, budget: level.budget, par: level.par,
-      used: 0, undos: 0, stack: []
+      used: 0, undos: 0, stack: [], rejects: 0
     };
     anim = null;
     drag = null;
@@ -112,6 +116,8 @@
     layoutGeom();
     log('load', { n: level.n });
     TL.warm(level, function () {
+      if (!state || state.n !== level.n) return;
+      TL.prewarm(level);
       document.getElementById('loading').classList.add('hidden');
       if (levelHasBurnt(level) && !progress.burntSeen && level.n >= 3) showLesson();
       syncChrome();
@@ -127,7 +133,6 @@
       document.getElementById(id).classList.add('hidden');
     });
     document.getElementById('undo').classList.remove('pulse');
-    document.getElementById('stuck-undo').classList.remove('pulse');
   }
 
   function showLesson() {
@@ -168,7 +173,7 @@
     for (var p = 0; p < state.plates.length; p++) {
       for (var i = state.plates[p].length - 1; i >= 0; i--) {
         var box = cakeBox(p, i);
-        if (x >= box.x - 6 && x <= box.x + box.w + 6 && y >= box.y - 10 && y <= box.y + box.h + 10) {
+        if (x >= box.x && x <= box.x + box.w && y >= box.y && y < box.y + box.h) {
           best = { plate: p, index: i, box: box };
           break;
         }
@@ -200,18 +205,61 @@
     return { x: rect.left + x, y: rect.top + y };
   }
 
+  function moveLegal(move) {
+    if (!move) return false;
+    var i = move[0], d = move[1], j = move[2];
+    if (i === j || d < 1 || d > TL.SPATULA) return false;
+    if (i < 0 || j < 0 || i >= state.plates.length || j >= state.plates.length) return false;
+    if (state.plates[i].length < d) return false;
+    if (state.plates[j].length + d > TL.CAP) return false;
+    return true;
+  }
+
   function commit(move) {
     if (!move) return;
-    if (anim || queue.length) { queue.push(move); return; }
+    if (anim || queue.length) { queue.push({ move: move }); return; }
     beginFlip(move, false);
   }
 
+  function rejectMove(move) {
+    state.rejects += 1;
+    wobble = { plate: move && move[0] >= 0 ? move[0] : 0, until: now() + 420 };
+    lastMove = { spent: false, rejected: true, i: move && move[0], d: move && move[1], j: move && move[2] };
+    log('reject', { move: move ? move.join(',') : '' });
+    if (!anim && !queue.length) reveal(currentOutcome());
+  }
+
+  function currentOutcome() {
+    if (TL.isGoal(state.plates)) return 'win';
+    if (state.flips <= 0) return 'fail';
+    if (!TL.canFinish(state.plates, state.flips, state.level)) return 'stuck';
+    return null;
+  }
+
+  function reveal(outcome) {
+    if (outcome === 'win') showWin();
+    else if (outcome === 'fail') showFail();
+    else if (outcome === 'stuck') showStuck();
+  }
+
+  function pumpQueue() {
+    if (anim || !queue.length) return;
+    var next = queue.shift();
+    if (next.undo) playUndo();
+    else beginFlip(next.move, false);
+  }
+
   function beginFlip(move, isUndo) {
+    if (!isUndo && !moveLegal(move)) {
+      rejectMove(move);
+      pumpQueue();
+      return;
+    }
     var level = state.level;
     var before = TL.clone(state.plates);
     var chunk = state.plates[move[0]].slice(state.plates[move[0]].length - move[1]);
     var after = TL.apply(state.plates, move, level.sided);
-    state.stack.push({ plates: before, move: move.slice() });
+    if (!isUndo) state.stack.push({ plates: before, move: move.slice() });
     state.plates = after;
     state.flips -= 1;
     state.used += 1;
@@ -251,10 +299,8 @@
     anim = null;
     burst(dest.x + dest.w / 2, dest.y + dest.h / 2, '#FFF4E2', triple ? 16 : 8);
     if (triple) burst(dest.x + dest.w / 2, dest.y, GOLD, 10);
-    if (outcome === 'win') showWin();
-    else if (outcome === 'fail') showFail();
-    else if (outcome === 'stuck') showStuck();
-    else if (queue.length) beginFlip(queue.shift(), false);
+    if (queue.length) { pumpQueue(); syncChrome(); return; }
+    reveal(outcome);
     syncChrome();
   }
 
@@ -275,8 +321,6 @@
   function showStuck() {
     document.getElementById('stuck-copy').textContent = TL.stuckText(state.flips);
     document.getElementById('stuck').classList.remove('hidden');
-    document.getElementById('undo').classList.add('pulse');
-    document.getElementById('stuck-undo').classList.add('pulse');
     tone(90, 0.35, 'sine', 0.05);
     log('stuck', { flips: state.flips });
   }
@@ -287,7 +331,16 @@
   }
 
   function undo() {
-    if (!state.stack.length || state.flips < 1 || anim) return;
+    if (anim || queue.length) { queue.push({ undo: true }); return; }
+    playUndo();
+  }
+
+  function playUndo() {
+    if (!state.stack.length || state.flips < 1) {
+      rejectMove(null);
+      pumpQueue();
+      return;
+    }
     hideAll();
     var prev = state.stack.pop();
     var forward = prev.move;
@@ -341,6 +394,10 @@
     if (drag) drawGhost();
     if (!drag && state.n === 1 && state.used === 0 && !anim && !overlayOpen()) drawCoach();
     if (anim) drawFlight();
+    if (wobble && now() < wobble.until) {
+      ctx.fillStyle = 'rgba(196,43,66,.16)';
+      ctx.fillRect(0, geom.hud, cssW, cssH - geom.hud - geom.bar);
+    }
     drawParticles();
   }
 
@@ -383,7 +440,25 @@
         if (skipFlight && anim && anim.move[2] === p && i >= state.plates[p].length - anim.move[1]) continue;
         if (drag && drag.lift && drag.lift.plate === p && i >= state.plates[p].length - drag.lift.d) continue;
         var heavy = state.plates[p].length - 1 - i >= TL.SPATULA;
-        drawCake(cakeBox(p, i), state.plates[p][i], state.level.sided, heavy ? 0.45 : 1, 1);
+        var box = cakeBox(p, i);
+        if (wobble && wobble.plate === p && now() < wobble.until) {
+          box = { x: box.x + Math.sin(now() / 28) * 6, y: box.y, w: box.w, h: box.h };
+        }
+        if (heavy) {
+          ctx.fillStyle = 'rgba(58,36,24,.22)';
+          round(box.x + 5, box.y + 6, box.w, box.h, 8);
+          ctx.fill();
+        }
+        drawCake(box, state.plates[p][i], state.level.sided, 1, 1);
+        if (heavy) {
+          ctx.save();
+          ctx.strokeStyle = '#8A5A32';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          round(box.x, box.y, box.w, box.h, 8);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
     }
   }
@@ -564,7 +639,15 @@
     if (overlayOpen() || landscapeLocked() || !geom) return;
     var p = localPoint(event);
     var hit = hitCake(p.x, p.y);
-    if (!hit) { selected = null; return; }
+    if (!hit) {
+      var column = plateAt(p.x);
+      drag = {
+        pointer: event.pointerId, x: p.x, y: p.y, x0: p.x, y0: p.y,
+        lift: null, plate: column
+      };
+      if (selected && column >= 0) canvas.setPointerCapture(event.pointerId);
+      return;
+    }
     var depth = depthOf(hit.plate, hit.index);
     if (depth >= TL.SPATULA) {
       wobble = { plate: hit.plate, until: now() + 280 };
@@ -572,7 +655,8 @@
     }
     drag = {
       pointer: event.pointerId, x: p.x, y: p.y, x0: p.x, y0: p.y,
-      lift: { plate: hit.plate, index: hit.index, d: depth + 1 }
+      lift: { plate: hit.plate, index: hit.index, d: depth + 1 },
+      plate: hit.plate
     };
     selected = { plate: hit.plate, d: depth + 1 };
     canvas.setPointerCapture(event.pointerId);
@@ -591,7 +675,17 @@
     var d = drag;
     drag = null;
     var moved = Math.hypot(d.x - d.x0, d.y - d.y0);
-    if (moved < 12) return;
+    if (moved < 12) {
+      if (d.lift) {
+        selected = { plate: d.lift.plate, d: d.lift.d };
+        return;
+      }
+      if (selected && d.plate >= 0 && d.plate !== selected.plate) {
+        commit([selected.plate, selected.d, d.plate]);
+        selected = null;
+      }
+      return;
+    }
     var target = plateAt(d.x);
     if (target < 0 || target === d.lift.plate || state.plates[target].length + d.lift.d > TL.CAP) {
       wobble = { plate: d.lift.plate, until: now() + 220 };
@@ -635,7 +729,6 @@
   });
 
   document.getElementById('undo').addEventListener('click', undo);
-  document.getElementById('stuck-undo').addEventListener('click', undo);
   document.getElementById('restart').addEventListener('click', restart);
   document.getElementById('stuck-restart').addEventListener('click', restart);
   document.getElementById('fail-restart').addEventListener('click', restart);
@@ -696,7 +789,9 @@
         stuck: !document.getElementById('stuck').classList.contains('hidden'),
         banner: document.getElementById('stuck-copy').textContent,
         stars: over <= 0 ? 3 : over === 1 ? 2 : 1,
-        queue: queue.length
+        queue: queue.length,
+        rejects: state.rejects,
+        maxPlate: state.plates.reduce(function (m, plate) { return Math.max(m, plate.length); }, 0)
       };
     },
     bufferScale: function () { return dpr; },
@@ -706,6 +801,20 @@
     plateWidth: function () { return geom ? geom.plateW : 0; },
     commit: function (i, d, j) { commit([i, d, j]); },
     load: load,
+    reset: function () {
+      state.plates = TL.clone(state.level.plates);
+      state.flips = state.budget;
+      state.used = 0;
+      state.undos = 0;
+      state.stack = [];
+      state.rejects = 0;
+      queue = [];
+      anim = null;
+      drag = null;
+      selected = null;
+      hideAll();
+      syncChrome();
+    },
     dismiss: function () { progress.burntSeen = true; document.getElementById('lesson').classList.add('hidden'); },
     last: function () { return lastMove; },
     dragFrom: function (plate, index) {
@@ -713,11 +822,17 @@
       var target = cakeBox(Math.min(state.plates.length - 1, plate + 1), 0);
       return { from: clientOf(box.x + box.w / 2, box.y + box.h / 2), to: clientOf(target.x + target.w / 2, geom.base - 20) };
     },
-    dragMove: function (i, d, j) {
+    dragMove: function (i, d, j, fx, fy) {
       var fromIndex = state.plates[i].length - d;
       var from = cakeBox(i, fromIndex);
-      var to = cakeBox(j, state.plates[j].length);
-      return { from: clientOf(from.x + from.w / 2, from.y + from.h / 2), to: clientOf(to.x + to.w / 2, to.y + to.h / 2) };
+      var to = cakeBox(j, Math.min(3, state.plates[j].length));
+      var ax = fx == null ? 0.5 : fx;
+      var ay = fy == null ? 0.55 : fy;
+      return {
+        from: clientOf(from.x + from.w * ax, from.y + from.h * ay),
+        to: clientOf(to.x + to.w / 2, to.y + to.h / 2),
+        expect: TL.apply(state.plates, [i, d, j], state.level.sided)
+      };
     },
     sample: function (plate, index) {
       var box = cakeBox(plate, index);

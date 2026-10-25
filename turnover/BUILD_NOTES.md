@@ -47,13 +47,29 @@
 - L1's ghost sits on the reference's first flip: the top blueberry of the tall stack, arcing onto the blueberry plate.
 - The burnt-side card appears the first time a two-sided level opens, which is L3 if you play in order. The copy is the brief's sentence.
 
+## QA revision 1
+
+No change to the stuck-banner sentence or to the flip budget. In-play undo still costs 1 and does not refund the flip. The stuck card offers Restart only.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| TO-001 | Re-check a queued move when it plays. An illegal one shakes and is not applied | `game.js` moveLegal, rejectMove | L1 commits `[2,1,1]`, `[2,3,0]`, `[1,2,0]` inside one flip: max plate 4, the third is rejected. Keys `3 q 2 3 e 1 2 w 1` do the same | PASS |
+| TO-002 | Undo pops the history instead of redoing the flip | `game.js` playUndo | L4: two flips, then Undo, then Undo, returns to the start. The first Undo matches the state after one flip | PASS |
+| TO-003 | Stuck card has Restart and no Undo | `index.html` | The L1 stuck card has `#stuck-restart` and no `#stuck-undo`. The bar Undo −1 is unchanged | PASS |
+| TO-004 | The 4th pancake stays full colour. Depth is a shadow and a dashed rim | `game.js` drawCakes | L9's bottom pancake, up-face versus underside, is at least 4.5:1 at 320 and 390 | PASS |
+| TO-005 | Tap a pancake, then tap a plate | `game.js` endDrag | A two-tap on L1 spends one flip | PASS |
+| TO-006 | The top of a pancake is not stolen by the one above | `game.js` hitCake | 100 drags on L1, L4, L9 and L10, including the top edge, centre and lower edge: 0 misses | PASS |
+| TO-007 | Warm the opening flips before the first drag | `logic.js` prewarm | The solve is measured after ready. FPS min 59.5 | PASS |
+| TO-008 | Undo during a flip is queued | `game.js` undo | A queued undo is played when the flip ends, and it steps backward | PASS |
+| TO-010 | Raise the stacks into the open counter | `game.js` layoutGeom | Cakes are up to 68 px on a tall phone and sit around the middle of the counter | PASS |
+
 ## Testing
 
 - Install first: `npm install` at the repo root. The browser suite loads Playwright from that install.
 - `node --test --test-timeout=180000 turnover/tests/logic.test.mjs turnover/tests/browser.test.mjs`
-- Result: 14 tests, 14 pass, 0 fail.
+- Result: 17 tests, 17 pass, 0 fail.
 - FPS: min 59.5 of 59.5, 60.0, 60.0. Scale 1.5, buffer 585. Gate is 50.
-- Misfires: 0 / 100.
+- Misfires: 0 / 100 across L1, L4, L9 and L10, including the top edge of a pancake.
 - Not claimed from a device lab. The fps gate is the throttled desktop Chrome run the other games use.
 - Repro: open `turnover/index.html`. `?level=9` opens Long Order, the burnt mid-stack.
 
