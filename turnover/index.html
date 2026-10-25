@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#FFF4E2" />
+<title>Turnover</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23FFF4E2'/%3E%3Cellipse cx='8' cy='9' rx='6' ry='3' fill='%23E8485B'/%3E%3Cellipse cx='8' cy='7' rx='6' ry='2' fill='%23F2B84B'/%3E%3C/svg%3E" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #3A2418; overflow: hidden; }
+  body {
+    min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+    color: #3A2418;
+    overscroll-behavior: none;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * 390 / 844));
+    height: min(100dvh, calc(100vw * 844 / 390));
+    max-height: 100dvh;
+    background: #FFF4E2;
+    overflow: hidden;
+  }
+  @media (max-width: 520px), (max-height: 520px) {
+    #stage { width: 100vw; height: 100dvh; max-height: none; }
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  button {
+    font-family: inherit; color: #FFF4E2; background: #2E5E9E;
+    border: 0; border-radius: 14px; min-height: 48px; min-width: 48px;
+    padding: 0 12px; font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: #C42B42; }
+  button.pulse { animation: pulse 700ms ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.06); } }
+  #hud, #bar {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; z-index: 2; pointer-events: none;
+  }
+  #hud { top: 0; min-height: 64px; align-items: flex-start; }
+  #bar { bottom: 0; min-height: 64px; justify-content: space-between; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  #hud button, #bar button { pointer-events: auto; }
+  #titles { flex: 1; min-width: 0; }
+  #kicker { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #2E5E9E; }
+  #name { font-size: 22px; line-height: 1.05; }
+  .pips { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .pip { width: 14px; height: 18px; border-radius: 7px; background: #F2B84B; box-shadow: inset 0 -3px 0 rgba(74,46,30,.35); }
+  .pip.spent { background: transparent; box-shadow: none; border: 1px dashed #C4A574; }
+  #mute { width: 56px; padding: 0; }
+  .overlay {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    background: rgba(58, 36, 24, .55); padding: 16px;
+  }
+  .overlay.hidden { display: none; }
+  #rotate.overlay { z-index: 7; background: #3A2418; }
+  .card {
+    width: min(320px, 100%); background: #FFF4E2; color: #3A2418; border-radius: 18px;
+    padding: 16px; box-shadow: 0 16px 40px rgba(58,36,24,.35);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 24px; line-height: 1.15; }
+  .card p { margin: 0 0 12px; line-height: 1.35; }
+  .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  #levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 8px 0 12px; }
+  #levels button { min-width: 0; padding: 0; }
+  .stars { letter-spacing: .16em; color: #C47A12; font-size: 22px; }
+  #stuck h2 { font-size: 22px; }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <header id="hud">
+      <div id="titles">
+        <div id="kicker">Plate 1</div>
+        <div id="name">First Flip</div>
+        <div class="pips" id="pips"></div>
+      </div>
+      <button id="mute" type="button">Snd</button>
+    </header>
+    <footer id="bar">
+      <button id="undo" type="button">Undo −1</button>
+      <button id="restart" type="button">Restart</button>
+      <button id="menu" type="button">Menu</button>
+    </footer>
+    <div id="loading" class="overlay hidden"><div class="card"><h2>Heating the griddle</h2><p>The plates are warming.</p></div></div>
+    <div id="rotate" class="overlay hidden"><div class="card"><h2>Turn upright</h2><p>Turnover is a tall counter. Rotate the phone.</p></div></div>
+    <div id="menu-panel" class="overlay hidden">
+      <div class="card">
+        <h2>Plates</h2>
+        <div id="levels"></div>
+        <div class="row">
+          <button id="how" type="button">How to flip</button>
+          <button id="resume" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+    <div id="help" class="overlay hidden">
+      <div class="card">
+        <h2>How to flip</h2>
+        <p>Drag the top one, two, or three pancakes onto another plate. They land upside down and in reverse order.</p>
+        <p>A burnt top needs another flip. The thin band under a pancake is the side you cannot see yet.</p>
+        <p>Undo −1 plays that flip backwards and spends one. Restart puts the whole budget back.</p>
+        <button id="help-close" type="button">Back</button>
+      </div>
+    </div>
+    <div id="lesson" class="overlay hidden">
+      <div class="card">
+        <h2>Burnt side</h2>
+        <p id="lesson-copy">This one has a burnt side. Flipping turns it over.</p>
+        <button id="lesson-ok" type="button" class="primary">Got it</button>
+      </div>
+    </div>
+    <div id="win" class="overlay hidden">
+      <div class="card">
+        <h2>Golden</h2>
+        <p class="stars" id="win-stars"></p>
+        <p id="win-copy"></p>
+        <div class="row">
+          <button id="win-next" type="button" class="primary">Next</button>
+          <button id="win-retry" type="button">Restart</button>
+          <button id="win-menu" type="button">Plates</button>
+        </div>
+      </div>
+    </div>
+    <div id="stuck" class="overlay hidden">
+      <div class="card">
+        <h2 id="stuck-copy">Can't finish in 0 flips — undo or restart</h2>
+        <div class="row">
+          <button id="stuck-undo" type="button" class="primary">Undo −1</button>
+          <button id="stuck-restart" type="button">Restart</button>
+        </div>
+      </div>
+    </div>
+    <div id="fail" class="overlay hidden">
+      <div class="card">
+        <h2>Out of flips</h2>
+        <p>The budget is gone and a plate is still mixed.</p>
+        <div class="row">
+          <button id="fail-restart" type="button" class="primary">Restart</button>
+          <button id="fail-menu" type="button">Plates</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

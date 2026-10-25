@@ -100,3 +100,15 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - name: Shish Lane logic and browser gate
         run: node --test --test-timeout=180000 shish-lane/tests/logic.test.mjs shish-lane/tests/browser.test.mjs
+
+  turnover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Turnover logic and browser gate
+        run: node --test --test-timeout=180000 turnover/tests/logic.test.mjs turnover/tests/browser.test.mjs
