@@ -18,6 +18,7 @@
   var queue = [];
   var particles = [];
   var wobble = null;
+  var settled = false;
   var audio = null;
   var events = [];
   var lastMove = null;
@@ -110,6 +111,7 @@
     selected = null;
     queue = [];
     particles = [];
+    settled = false;
     hideAll();
     document.getElementById('loading').classList.remove('hidden');
     syncChrome();
@@ -118,10 +120,49 @@
     TL.warm(level, function () {
       if (!state || state.n !== level.n) return;
       TL.prewarm(level);
+      paintPaths();
       document.getElementById('loading').classList.add('hidden');
       if (levelHasBurnt(level) && !progress.burntSeen && level.n >= 3) showLesson();
       syncChrome();
     });
+  }
+
+  function paintPaths() {
+    if (!state || !geom) return;
+    paint();
+    var moves = TL.legalMoves(state.plates);
+    if (moves.length) {
+      var move = moves[0];
+      var before = TL.clone(state.plates);
+      anim = {
+        move: move,
+        chunk: before[move[0]].slice(before[move[0]].length - move[1]),
+        before: before,
+        triple: true,
+        undo: false,
+        outcome: null,
+        t0: now() - 220,
+        dur: 400,
+        popped: false
+      };
+      paint();
+      anim = null;
+      var box = cakeBox(move[0], before[move[0]].length - 1);
+      drag = {
+        pointer: 0, x: box.x + box.w, y: box.y, x0: box.x, y0: box.y,
+        lift: { plate: move[0], d: move[1] },
+        plate: move[0]
+      };
+      paint();
+      drag = null;
+    }
+    wobble = { plate: 0, until: now() + 30 };
+    paint();
+    wobble = null;
+    burst(cssW / 2, cssH / 2, GOLD, 6);
+    particles = [];
+    if (state.n === 1) drawCoach();
+    paint();
   }
 
   function levelHasBurnt(level) {
@@ -155,7 +196,7 @@
       pip.className = 'pip' + (i >= state.flips ? ' spent' : '');
       pips.appendChild(pip);
     }
-    document.getElementById('undo').disabled = !state.stack.length || state.flips < 1;
+    document.getElementById('undo').disabled = settled || !state.stack.length || state.flips < 1;
     document.getElementById('mute').textContent = progress.mute ? 'Muted' : 'Snd';
   }
 
@@ -217,6 +258,10 @@
 
   function commit(move) {
     if (!move) return;
+    if (settled || state.flips <= 0) {
+      rejectMove(move);
+      return;
+    }
     if (anim || queue.length) { queue.push({ move: move }); return; }
     beginFlip(move, false);
   }
@@ -250,6 +295,11 @@
   }
 
   function beginFlip(move, isUndo) {
+    if (settled || state.flips <= 0) {
+      rejectMove(isUndo ? null : move);
+      if (!settled) pumpQueue();
+      return;
+    }
     if (!isUndo && !moveLegal(move)) {
       rejectMove(move);
       pumpQueue();
@@ -299,6 +349,17 @@
     anim = null;
     burst(dest.x + dest.w / 2, dest.y + dest.h / 2, '#FFF4E2', triple ? 16 : 8);
     if (triple) burst(dest.x + dest.w / 2, dest.y, GOLD, 10);
+    if (outcome === 'win' || outcome === 'fail') {
+      while (queue.length) {
+        var dropped = queue.shift();
+        state.rejects += 1;
+        log('reject', { move: dropped.undo ? 'undo' : (dropped.move ? dropped.move.join(',') : '') });
+      }
+      settled = true;
+      reveal(outcome);
+      syncChrome();
+      return;
+    }
     if (queue.length) { pumpQueue(); syncChrome(); return; }
     reveal(outcome);
     syncChrome();
@@ -331,6 +392,10 @@
   }
 
   function undo() {
+    if (settled || state.flips <= 0) {
+      rejectMove(null);
+      return;
+    }
     if (anim || queue.length) { queue.push({ undo: true }); return; }
     playUndo();
   }
@@ -636,7 +701,7 @@
   canvas.addEventListener('pointerdown', function (event) {
     if (event.button !== undefined && event.button !== 0) return;
     ensureAudio();
-    if (overlayOpen() || landscapeLocked() || !geom) return;
+    if (overlayOpen() || landscapeLocked() || !geom || settled) return;
     var p = localPoint(event);
     var hit = hitCake(p.x, p.y);
     if (!hit) {
@@ -656,7 +721,8 @@
     drag = {
       pointer: event.pointerId, x: p.x, y: p.y, x0: p.x, y0: p.y,
       lift: { plate: hit.plate, index: hit.index, d: depth + 1 },
-      plate: hit.plate
+      plate: hit.plate,
+      prior: selected ? { plate: selected.plate, d: selected.d } : null
     };
     selected = { plate: hit.plate, d: depth + 1 };
     canvas.setPointerCapture(event.pointerId);
@@ -675,24 +741,31 @@
     var d = drag;
     drag = null;
     var moved = Math.hypot(d.x - d.x0, d.y - d.y0);
-    if (moved < 12) {
-      if (d.lift) {
-        selected = { plate: d.lift.plate, d: d.lift.d };
-        return;
-      }
-      if (selected && d.plate >= 0 && d.plate !== selected.plate) {
+    if (!d.lift) {
+      if (moved < 12 && selected && d.plate >= 0 && d.plate !== selected.plate) {
         commit([selected.plate, selected.d, d.plate]);
         selected = null;
+        return;
       }
+      if (moved >= 12) rejectMove([d.plate, 1, plateAt(d.x)]);
+      return;
+    }
+    if (moved < 12) {
+      if (d.prior && d.prior.plate !== d.lift.plate) {
+        commit([d.prior.plate, d.prior.d, d.lift.plate]);
+        selected = null;
+        return;
+      }
+      selected = { plate: d.lift.plate, d: d.lift.d };
       return;
     }
     var target = plateAt(d.x);
-    if (target < 0 || target === d.lift.plate || state.plates[target].length + d.lift.d > TL.CAP) {
-      wobble = { plate: d.lift.plate, until: now() + 220 };
-      lastMove = { i: d.lift.plate, d: d.lift.d, j: target, spent: false };
+    var move = [d.lift.plate, d.lift.d, target];
+    if (!moveLegal(move)) {
+      rejectMove(move);
       return;
     }
-    commit([d.lift.plate, d.lift.d, target]);
+    commit(move);
   }
 
   function cancelDrag(event) {
@@ -707,6 +780,10 @@
   window.addEventListener('keydown', function (event) {
     if (!state || overlayOpen() || !geom) return;
     var key = event.key;
+    if (settled) {
+      if (key === 'r' || key === 'R') restart();
+      return;
+    }
     if (key === 'u' || key === 'U') { undo(); return; }
     if (key === 'r' || key === 'R') { restart(); return; }
     if (!selected && key >= '1' && key <= '4') {
@@ -791,6 +868,7 @@
         stars: over <= 0 ? 3 : over === 1 ? 2 : 1,
         queue: queue.length,
         rejects: state.rejects,
+        settled: settled,
         maxPlate: state.plates.reduce(function (m, plate) { return Math.max(m, plate.length); }, 0)
       };
     },
@@ -812,6 +890,7 @@
       anim = null;
       drag = null;
       selected = null;
+      settled = false;
       hideAll();
       syncChrome();
     },

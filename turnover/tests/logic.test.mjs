@@ -145,7 +145,7 @@ test('the stuck check matches par on at least 20 states', () => {
     checks += 2;
   }
   assert.ok(checks >= 20);
-  assert.equal(T.stuckText(3), "Can't finish in 3 flips — undo or restart");
+  assert.equal(T.stuckText(3), "Can't finish in 3 flips — restart");
 });
 
 test('javascript flips match the python sim on random lines', () => {

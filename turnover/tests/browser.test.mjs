@@ -122,7 +122,7 @@ test('pointercancel does not flip, and a stuck line uses the exact banner', asyn
     await page.evaluate(() => { window.__turn.commit(0, 1, 1); window.__turn.commit(2, 1, 0); });
     await page.waitForSelector('#stuck:not(.hidden)');
     const stuck = await page.evaluate(() => window.__turn.snapshot());
-    assert.equal(stuck.banner, "Can't finish in 3 flips — undo or restart");
+    assert.equal(stuck.banner, "Can't finish in 3 flips — restart");
     assert.equal(stuck.stuck, true);
     assert.equal(await page.locator('#stuck-undo').count(), 0);
     assert.equal(await page.locator('#stuck-restart').count(), 1);
@@ -297,6 +297,238 @@ test('a tap on a pancake then a tap on a plate flips', async () => {
     await tap(point.to);
     await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().used === 1);
     assert.equal((await page.evaluate(() => window.__turn.snapshot())).used, 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a drag in the winning flip keeps the win, and extras behind the last flip stay at 0', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    const winning = await page.evaluate(() => {
+      const logic = window.TurnLogic;
+      const level = logic.levels()[0];
+      let plates = logic.clone(level.plates);
+      for (const move of [[2, 1, 1], [2, 2, 0], [1, 2, 2]]) plates = logic.apply(plates, move, level.sided);
+      return plates;
+    });
+    for (const move of [[2, 1, 1], [2, 2, 0]]) {
+      await page.evaluate((item) => window.__turn.commit(item[0], item[1], item[2]), move);
+      await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    }
+    await page.evaluate(() => {
+      window.__turn.commit(1, 2, 2);
+      window.__turn.commit(0, 1, 1);
+    });
+    const extra = await page.evaluate(() => window.__turn.dragMove(0, 1, 1));
+    await drag(page, session, extra.from, extra.to);
+    const won = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(won.won, true);
+    assert.equal(won.settled, true);
+    assert.equal(won.flips, 2);
+    assert.equal(won.used, 3);
+    assert.equal(JSON.stringify(won.plates), JSON.stringify(winning));
+    await page.evaluate(() => window.__turn.commit(0, 1, 1));
+    const held = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(held.won, true);
+    assert.equal(held.flips, 2);
+    assert.equal(JSON.stringify(held.plates), JSON.stringify(winning));
+
+    await page.evaluate(() => window.__turn.load(1));
+    await page.waitForFunction(() => window.__turn.ready && window.__turn.snapshot().used === 0);
+    const path = await page.evaluate(() => {
+      const logic = window.TurnLogic;
+      const level = logic.levels()[0];
+      let plates = logic.clone(level.plates);
+      const moves = [];
+      for (let n = 0; n < level.budget; n++) {
+        const options = logic.legalMoves(plates);
+        let picked = null;
+        for (const move of options) {
+          const next = logic.apply(plates, move, level.sided);
+          if (logic.isGoal(next)) continue;
+          picked = { move, next };
+          break;
+        }
+        if (!picked) return null;
+        moves.push(picked.move);
+        plates = picked.next;
+      }
+      return moves;
+    });
+    assert.ok(path && path.length === 5, JSON.stringify(path));
+    for (const move of path.slice(0, 3)) {
+      await page.evaluate((item) => window.__turn.commit(item[0], item[1], item[2]), move);
+      await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    }
+    await page.evaluate(({ fourth, fifth }) => {
+      window.__turn.commit(fourth[0], fourth[1], fourth[2]);
+      window.__turn.commit(fifth[0], fifth[1], fifth[2]);
+      window.__turn.commit(fifth[0], fifth[1], fifth[2]);
+    }, { fourth: path[3], fifth: path[4] });
+    await page.keyboard.press('u');
+    const trailing = await page.evaluate(() => window.__turn.dragMove(0, 1, 1));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: trailing.from.x, y: trailing.from.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: trailing.to.x, y: trailing.to.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    const failed = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(failed.failed, true);
+    assert.equal(failed.won, false);
+    assert.equal(failed.flips, 0);
+    assert.equal(failed.used, 5);
+    assert.equal(failed.undos, 0);
+    assert.ok(failed.flips >= 0);
+    await page.evaluate(() => window.__turn.commit(0, 1, 1));
+    const locked = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(locked.flips, 0);
+    assert.equal(locked.used, 5);
+    assert.equal(errors.length, 0, errors.join('\n'));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a drag that misses a pancake rejects instead of throwing', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    const spots = await page.evaluate(() => {
+      const lower = window.__turn.sample(2, 0).box;
+      const upper = window.__turn.sample(2, 1).box;
+      const rect = document.getElementById('c').getBoundingClientRect();
+      const gap = upper.y + upper.h + (lower.y - upper.y - upper.h) / 2;
+      const x = rect.left + lower.x + lower.w / 2;
+      return {
+        gap: { x, y: rect.top + gap },
+        empty: { x, y: rect.top + 120 },
+        gone: window.__turn.dragMove(2, 1, 1).from,
+        gapInside: gap > upper.y + upper.h && gap < lower.y
+      };
+    });
+    assert.equal(spots.gapInside, true);
+    async function swipe(from) {
+      const used = (await page.evaluate(() => window.__turn.snapshot())).used;
+      const rejects = (await page.evaluate(() => window.__turn.snapshot())).rejects;
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + 36, y: from.y + 28, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+      const snap = await page.evaluate(() => window.__turn.snapshot());
+      assert.equal(snap.used, used);
+      assert.ok(snap.rejects > rejects, 'rejects ' + snap.rejects);
+    }
+    await swipe(spots.gap);
+    await swipe(spots.empty);
+    await page.evaluate(() => window.__turn.commit(2, 1, 1));
+    await swipe(spots.gone);
+    assert.equal((await page.evaluate(() => window.__turn.snapshot())).used, 1);
+    assert.equal(errors.length, 0, errors.join('\n'));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a drag that turns illegal before release gets the reject flash', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    const cream = await page.evaluate(() => {
+      const ctx = document.getElementById('c').getContext('2d');
+      const scale = window.__turn.bufferScale();
+      for (let y = 100; y < 220; y += 2) {
+        const data = ctx.getImageData(Math.round(14 * scale), Math.round(y * scale), 1, 1).data;
+        if (data[0] > 250 && data[1] > 235 && data[2] > 210) return { x: 14, y, rgb: [data[0], data[1], data[2]] };
+      }
+      return null;
+    });
+    assert.ok(cream, 'cream pixel');
+    const hold = await page.evaluate(() => window.__turn.dragMove(2, 3, 1));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: hold.from.x, y: hold.from.y, id: 1 }] });
+    await page.evaluate(() => window.__turn.commit(2, 2, 0));
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: hold.to.x, y: hold.to.y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); }));
+    const tint = await page.evaluate((spot) => {
+      const ctx = document.getElementById('c').getContext('2d');
+      const scale = window.__turn.bufferScale();
+      const data = ctx.getImageData(Math.round(spot.x * scale), Math.round(spot.y * scale), 1, 1).data;
+      return { rgb: [data[0], data[1], data[2]], last: window.__turn.last() };
+    }, cream);
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().queue === 0);
+    const snap = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(snap.used, 1);
+    assert.ok(snap.rejects >= 1, 'rejects ' + snap.rejects);
+    assert.equal(tint.last.rejected, true);
+    assert.ok(tint.rgb[1] < cream.rgb[1] - 8, 'flash ' + tint.rgb.join(',') + ' vs ' + cream.rgb.join(','));
+    assert.equal(errors.length, 0, errors.join('\n'));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('tapping a pancake on the target plate flips, and the same plate does not', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__turn.ready);
+    async function tap(at) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    const points = await page.evaluate(() => {
+      const rect = document.getElementById('c').getBoundingClientRect();
+      function mid(plate, index) {
+        const box = window.__turn.sample(plate, index).box;
+        return { x: rect.left + box.x + box.w / 2, y: rect.top + box.y + box.h / 2 };
+      }
+      return { from: mid(2, 3), onto: mid(1, 0), own: mid(2, 1), expect: window.TurnLogic.apply(window.__turn.snapshot().plates, [2, 1, 1], window.TurnLogic.levels()[0].sided) };
+    });
+    await tap(points.from);
+    await tap(points.onto);
+    await page.waitForFunction(() => !window.__turn.animating() && window.__turn.snapshot().used === 1);
+    const flipped = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(JSON.stringify(flipped.plates), JSON.stringify(points.expect));
+    await page.evaluate(() => window.__turn.reset());
+    const again = await page.evaluate(() => {
+      const rect = document.getElementById('c').getBoundingClientRect();
+      function mid(plate, index) {
+        const box = window.__turn.sample(plate, index).box;
+        return { x: rect.left + box.x + box.w / 2, y: rect.top + box.y + box.h / 2 };
+      }
+      return { from: mid(2, 3), own: mid(2, 1) };
+    });
+    await tap(again.from);
+    await tap(again.own);
+    await page.waitForTimeout(80);
+    const stayed = await page.evaluate(() => window.__turn.snapshot());
+    assert.equal(stayed.used, 0);
+    assert.equal(stayed.rejects, 0);
+    assert.equal(errors.length, 0, errors.join('\n'));
   } finally {
     await browser.close();
   }

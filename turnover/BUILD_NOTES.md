@@ -11,7 +11,7 @@
 - Tech: Canvas 2D. No build step and no physics library. `logic.js` is the rules and the budget-aware solver. `game.js` draws and handles input.
 - A flip lifts at most 3 pancakes from the top, reverses them, and turns a pancake over only when its flavour is two-sided on that level. Plates hold 4. The target is a different plate.
 - Budget is par + 2. Undo plays the reverse flip and costs 1. The button reads Undo −1.
-- The stuck banner is exact: after a flip it says "Can't finish in N flips — undo or restart" when the goal is farther away than the flips left. The solver is a bidirectional search. A goal-side ball of depth 6 is warmed when the plate opens, in small slices, behind "Heating the griddle".
+- The stuck banner is exact: after a flip it says "Can't finish in N flips — restart" when the goal is farther away than the flips left. The card offers Restart only. The solver is a bidirectional search. A goal-side ball of depth 6 is warmed when the plate opens, in small slices, behind "Heating the griddle". Before the plate is shown, the opening position, a 2-flip neighbourhood on the smaller plates (budget at most 7), and the reference line are checked so the first flips do not hitch.
 - Levels: the 10 boards in `tests/pack_v1_solved.json`, unchanged. No hint.
 - Controls: drag a pancake to a plate, with a ghost of the landing. A tap under 12 px does not flip. Tap a pancake, then a plate, also works. Keys 1–4 pick a plate, Q/W/E pick depth, then 1–4 the target. U undoes, R restarts.
 - A drag that finishes during a flip is queued and played next. pointercancel drops the drag.
@@ -27,9 +27,9 @@
 | M2 Reverse and turnover | PASS | A 2-lift reverses order. On L3 the two blueberries turn burnt. A both-sides-golden pancake does not change |
 | M3 No deep lift, full plate is free | PASS | A depth of 4 is not a legal move. A full plate is not a drop target and spends nothing |
 | M4 Undo costs 1 and restores the plates | PASS | The reverse of every opening move restores the start. In the browser, undo after two flips returns the first-flip plates and spends one more flip |
-| M5 Stuck banner is exact | PASS | 40 checks: each start is solvable in par and not in par − 1, and the same after the first reference flip. The L1 line `[0,1,1]` then `[2,1,0]` shows "Can't finish in 3 flips — undo or restart" |
+| M5 Stuck banner is exact | PASS | 40 checks: each start is solvable in par and not in par − 1, and the same after the first reference flip. The L1 line `[0,1,1]` then `[2,1,0]` shows "Can't finish in 3 flips — restart" |
 | M6 Faces readable at 320 and 390 | PASS | On L9, a mid-stack burnt pancake samples a dark up-face and a golden underside at 320×568 and 390×844. Plate widths are 70 and 87 |
-| M7 60 fps, flip ≤ 420 ms, queued drags | PASS | FPS min 59.5 of 59.5, 60.0, 60.0 at 390×844, DPR cap 1.5, buffer 585, 4× CPU. A second commit during the first flip is played, not dropped |
+| M7 60 fps, flip ≤ 420 ms, queued drags | PASS | FPS min 59.5 of 59.5, 60.0, 60.0 at 390×844, DPR cap 1.5, buffer 585, 4× CPU. A second commit during the first flip is played, not dropped. A commit during the winning flip is dropped |
 | M8 Pack exact and non-isomorphic | PASS | Starts and reference lines match `pack_v1_solved.json`. The ten starts stay distinct under plate order and same-sidedness flavour relabelling |
 | Fidelity | PASS | 12 random flips on each of the 10 levels match `tests/core.py` |
 | Lazy L7–L10 | PASS | Re-measured greedy and 2-ply, no probe: L7 5.0%, L8 12.5%, L9 2.5%, L10 2.5%. All ≤ 30% |
@@ -63,13 +63,28 @@ No change to the stuck-banner sentence or to the flip budget. In-play undo still
 | TO-008 | Undo during a flip is queued | `game.js` undo | A queued undo is played when the flip ends, and it steps backward | PASS |
 | TO-010 | Raise the stacks into the open counter | `game.js` layoutGeom | Cakes are up to 68 px on a tall phone and sit around the middle of the counter | PASS |
 
+## QA revision 2
+
+No change to the flip rules, the 10 levels, the par + 2 budget, or the cost of an in-play undo. A finished plate, win or fail, ignores further flips until Restart or the next plate.
+
+| ID | Action | What changed | Test | Status |
+| --- | --- | --- | --- | --- |
+| TO-011 | On a win or a fail, drop the move queue and the undo queue. Reject anything further until restart or the next plate. At 0 flips, reject the move. The counter never goes negative | `game.js` settled, finishAnim, beginFlip, commit | During L1's winning flip, a queued commit and a drag leave the win card and the winning plates, with 2 flips left. Behind the last allowed flip, two queued commits, Undo, and a drag leave the counter at 0 | PASS |
+| TO-012 | A drag that starts off a pancake must not throw | `game.js` endDrag | The 4 px gap, the empty counter, and a spot a flip just emptied: no console error, the reject cue, and no extra flip | PASS |
+| TO-013 | The stuck sentence must not offer undo | `logic.js` stuckText, `index.html` | The banner is "Can't finish in 3 flips — restart". The card still has Restart only | PASS |
+| TO-014 | A drag that is illegal by release uses the same shake and red flash | `game.js` endDrag calls rejectMove | A 3-lift whose source a queued flip shortens is rejected. The counter flash is the reject tint | PASS |
+| TO-005 | In tap-then-tap, a pancake on a valid target plate is that plate | `game.js` remembers the previous tap | Tap the top of the tall stack, then the pancake on the middle plate: one flip. A pancake on the same plate does not flip | PASS |
+| TO-007 | Warm one more ply where that stays cheap, and draw a flip once under the loading card | `logic.js` prewarm, `game.js` paintPaths | Plates with budget at most 7 warm two plies and the reference line. Larger plates stay at one ply. FPS min 59.5 of 59.5, 60.0, 60.0 | PASS |
+
 ## Testing
 
 - Install first: `npm install` at the repo root. The browser suite loads Playwright from that install.
 - `node --test --test-timeout=180000 turnover/tests/logic.test.mjs turnover/tests/browser.test.mjs`
-- Result: 17 tests, 17 pass, 0 fail.
+- Result: 21 tests, 21 pass, 0 fail.
 - FPS: min 59.5 of 59.5, 60.0, 60.0. Scale 1.5, buffer 585. Gate is 50.
 - Misfires: 0 / 100 across L1, L4, L9 and L10, including the top edge of a pancake.
+- Fidelity: 12 random flips on each of the 10 levels match `tests/core.py`.
+- Lazy L7–L10, re-measured: 5.0%, 12.5%, 2.5%, 2.5%. All ≤ 30%.
 - Not claimed from a device lab. The fps gate is the throttled desktop Chrome run the other games use.
 - Repro: open `turnover/index.html`. `?level=9` opens Long Order, the burnt mid-stack.
 

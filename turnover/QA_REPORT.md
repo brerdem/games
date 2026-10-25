@@ -1,111 +1,97 @@
-# Turnover — QA Report R0
-Commit `3f184a02fcfaf3174e52b7fe5e5a029f81e7d159` (main, brerdem/games) · live https://brerdem.github.io/games/turnover/ · Tester: Grok Bot (Game Tester) · 2026-10-25 08:35 (UTC+3)
-All results come from headless Chrome on the box, using CDP touch drags and the `__turn` hook, plus my own engine (`tools/turnover/teng.mjs`). Everything is a **SIMULATION**: no human testers and no real devices were used. Raw data is in `data/` and screenshots are in `shots/`.
+# Turnover — QA Report R1 (revision cycle 1 of 2)
+Commit `1f0a7ffe698752e22ecc50c1a7045d83a17ea642` · live https://brerdem.github.io/games/turnover/ · Tester: Grok Bot · 2026-10-25 09:55 (UTC+3)
+All results are **SIMULATION**: headless Chrome with CDP touch drags plus my independent engine. No humans, no real devices. The R0 report is archived as `QA_REPORT_R0.md` with `shots_r0/` and `data_r0/`.
 
 ## A. Verdict
-**71/100: REVISE.** It misses the 80 bar, and there is one critical defect: P1 TO-001, where input queueing breaks the plate-capacity rule. The puzzle core checks out exactly (pars, solutions, fidelity, banner).
+**74/100: REVISE.** It is still below 80, and there is a new critical defect: P1 TO-011, where a queued move plays after a win or after the budget is spent. Four of the five R0 issues I re-checked are fixed. TO-003 was resolved as design.
 
-| Category | Score | Gate |
+| Category | R0 | R1 | Gate |
+|---|---|---|---|
+| Core | 15 | 16 | ✓ |
+| Feel | 14 | 15 | ✓ |
+| Hook | 10 | 10 | ✓ (borderline) |
+| Progression | 11 | 11 | – |
+| Visuals | 7 | 8 | – |
+| Mobile | 8 | 8 | ✓ |
+| Originality | 6 | 6 | ✓ (provisional) |
+| **Total** | **71** | **74** | 80 ✗; critical defect ✗ |
+
+## B. Build and rule changes
+- **Live files match the commit:** sha256 prefixes game.js 0182ddd914ee, index.html 67c4df3c36bf, logic.js 88b04ebaa787.
+- **logic.js changes:** a canFinish memo and `prewarm` only. The levels, the rules and the par+2 budget are unchanged, so I did not recompute the exact lazy odds. The R0 values still apply (L7–L10 = 8.87 / 11.15 / 1.19 / 2.19%; copy in `data/exact_odds_r0_unchanged_rules.json`).
+- **Rechecked on R1 logic.js:**
+  - Base metrics: identical.
+  - Fidelity: every reachable state, 0 mismatches (2,938,704 states / 46.8M moves in the largest config).
+  - Banner exactness: 0 wrong (exhaustive on L1–L5; sampled on L6–L10).
+- **Builder tests:** 17/17 pass (`data/o_builder_tests.txt`).
+
+## C. Fix verification (real interaction at 320×568, 360×800, 390×844, 430×932)
+| ID | Status | Evidence |
 |---|---|---|
-| Core | 15/20 | ≥14 ✓ |
-| Feel | 14/20 | ≥14 ✓ (borderline) |
-| Hook | 10/15 | ≥10 ✓ (borderline) |
-| Progression | 11/15 | – |
-| Visuals | 7/10 | – |
-| Mobile | 8/10 | ≥7 ✓ |
-| Originality | 6/10 | ≥6 ✓ (provisional, needs human review) |
-| **Total** | **71** | needs 80 ✗, and no critical defects ✗ |
+| TO-001 (queued moves bypass rules) | **Fixed** | Seq [2,1,1], [2,3,0], [1,2,0]: 3/3 at each size → flip, flip, `reject:1,2,0` with a shake and red flash. Max plate height 4. The keyboard sequence `3q23e12w1` gives the same result. Fuzz: 120 bursts of 2–4 fast drags across L1–L10 at 320 and 390 (345 drags). 0 capacity breaches, piece multiset preserved, and the final state equals a replay of the logged flips in 120/120 bursts. Shot `to001_a_390.png`. |
+| TO-002 (undo not a stack) | **Fixed** | Rapid undo taps after idle: L4 3 moves/3 undos, L10 4/4, L9 5/5 at all 4 sizes → back to the exact start every time, with the exact reverse moves. L9/L10 one-at-a-time undos #1 and #2 restore the exact previous states. After that the stuck card appears and blocks further undo, which is expected under the accepted economy. |
+| TO-003 | **Closed as design** | The stuck card shows Restart only (`stuck_card_390.png`). **But the copy still says "Can't finish in N flips — undo or restart"** (`logic.js` stuckText). See TO-013. |
+| TO-004 (depth-4 contrast) | **Fixed** | Pixel classification of 300 bands at level starts (320 and 390): 300/300 correct. Depth-4 burnt vs golden is **6.91:1**, the same as depths 1–3. It was 1.51–1.97:1 in R0. Shot `read_390x844_L9.png`. |
+| TO-005 (tap-then-tap) | **Partly fixed** | Tap a pancake, then tap the empty part of the target column → flips (320, 390, and the R0 regression probe). Tap a pancake, then tap a pancake on the target plate → it re-selects instead of flipping (0 flips). |
+| TO-006 (top-edge hit overlap) | **Fixed** | Misfire stress, touch anywhere in the pancake box (1–99% of width and height, no wobble), random legal depth-1–3 moves on L9/L10: **0/100 at 320, 360, 390 and 430**. Central 70% with 3 px wobble: 0/100 at 390. |
+| TO-007 (first-flip spike) | **Mostly fixed** | 6 runs at 390, DPR 2, 4× CPU: a 216 ms frame at frames 2–3 in 1/6 runs (the first, cold browser). The other 5 runs had a worst frame ≤67 ms (mean 58.7–59.9 fps). |
+| TO-008 (undo during animation) | **Queue logic works; touch unconfirmed** | Mouse click on Undo mid-flip → queued and played 6/6 (320, 390, 430). A CDP touch tap mid-flip was queued only 5/21 times (4/4 at 320/360 in one run, 1/17 elsewhere). Touch taps after idle work 6/6. R0 showed the same pattern of swallowed synthetic taps right after a drag, so this looks like a harness/emulation effect. **Needs a real-device check.** A held-over queued move under the stuck card is moot now that the card is Restart-only. |
+| TO-009 (GF sim probe noise) | Open (sim-side, not re-run) | – |
+| TO-010 (empty top / wobble) | **Fixed** | Stacks are vertically centred and the wobble shake is drawn (shots). |
 
-## B. Build verification
-The live game.js, index.html and logic.js are byte-identical to the commit (sha256 prefixes 994f233b67d3 / 1e8e68ff9a40 / 915e2638e0c9). Builder tests: **14/14 pass** (`data/o_builder_tests.txt`). Console errors: 0 in every run.
-
-## C. Rules, levels, fidelity (exact)
-- I computed par, the number of states within 6 flips, the number of optimal lines, the openings that keep par and the fatal openings for L1–L10 independently. All match the brief (`data/base.json`). All 10 reference lines solve at ★★★ through real touch drags at 320, 360, 390 and 430 px (`data/m1_reference_drags.json`).
-- Engine fidelity, logic.js vs my engine: every reachable state was checked for every sided config (2,938,704 states and 46.8M moves in the largest). **0 mismatches** in legal moves, apply or isGoal. L5 uses `sided='all'` where the brief says 'A,B'. This is equivalent because L5 has no C.
-- Stuck banner vs exact distance:
-  - Exhaustive on L1–L5: 280 / 420 / 2160 / 3240 / 25296 states.
-  - 400 sampled boundary states on L6–L10.
-  - **507 in-browser spot checks** on L7–L10 after real drags, 128 of them stuck.
-  - **0 wrong** across all of these.
-
-## D. Feel and input (390 unless stated)
-- **Misfires, 100 drags per cell, random legal move at depth 1–3, L9/L10, 3 px wobble:**
-  - Touch in the central 70% of the pancake: **0/100 at 360, 390 and 430**.
-  - Touch anywhere in the pancake box (stress test): 6 and 2 (two runs at 360), 3 at 390, 1 at 430. Every one of these was a touch in the top ~6 px of a pancake, which committed one fewer pancake (the one above wins the overlap).
-- **Queueing:** a second drag at +0, 100, 200 or 300 ms into a flip was queued and played, 4/4. A drag is never silently dropped, except in TO-001 case b.
-- **Gestures:**
-  - These commit nothing: an 8 px drag, a drop back on the same plate, a drop in the gap, a drop on a full plate, a drag of the 4th pancake, touchcancel over a valid target, a drag starting on empty counter, and a two-finger touch.
-  - These do commit, because the target plate is chosen by x position only: a release over the HUD or over the bottom bar in the target column, and a diagonal drag. This is acceptable.
-  - **Tap-pancake then tap-plate does nothing.** It is only implemented for the keyboard (see TO-005).
-- **Overlays:**
-  - Triple tap on win-Next advances exactly 1 level.
-  - Triple tap on lesson-OK dismisses it and the state is unchanged.
-  - Triple tap on stuck-Undo performs exactly 1 undo.
-  - Double tap on fail-Restart gives one clean restart.
-- **Rotate and resize:** in landscape (844×390) the rotate overlay appears and drags are ignored. Going back to portrait and resizing to 360×640 keeps the state, and drags work afterwards.
-- **fps, my measurement (390, DPR 2, CPU 4×, 3 L10 solves):**
-  - Mean 58.3 / 58.5 / 58.4. Worst 30-frame window 40.9 / 41.9 / 40.9.
-  - One long frame of 233–250 ms per run, right at the first flip (probe: frame indexes 1 and 28; up to 316 ms).
-  - The builder's test in my run gave 58.1 / 60 / 60.
-
-## E. Mobile and layout
-- 19 sizes, 320×568 to 480×1000, all 10 levels, 4-high stack boxes: nothing off-screen, nothing under the HUD or bar, no scroll (`data/misc_sizes_offline.json`).
-- Cell size 54 px (44 px at 320). Plate width 106 / 116 / 130 / 93 px on 3-plate levels and 80 / 87 / 97 / 70 px on 4-plate levels (360 / 390 / 430 / 320).
-- file:// with the network offline: it loads, L1 is won (moves via hook), 0 non-file requests.
-- The top ~45% of the screen is empty counter at 390×844.
-
-## F. Issues
+## D. New issues
 | ID | Pri | Owner | Issue / evidence |
 |---|---|---|---|
-| TO-001 | **P1** | MVP Builder | **Queued moves are not re-validated against the state they actually run on** (`beginFlip` has no legality check).<br>(a) L1, three fast drags inside one flip, 2→1 (1 pancake), then 2→3 (0)… exact seq [2,1,1], [2,3,0], [1,2,0], each legal when the drag was made. Result: a plate holding **6 pancakes** `[[0,0,0,2,2,2],[],[]]` and a stuck banner. Reproduced 3/3, and also with keys `3 q 2 3 e 1 2 w 1`. Shot `q2_overcap_390.png`.<br>(b) Seq [2,1,1], [1,2,0], [1,2,2]: the 3rd move was silently dropped (queue 0, only 2 flips logged). Fix: re-check legality when dequeuing, or snapshot the post-animation state at commit time. |
-| TO-002 | P2 | MVP Builder | **The second Undo re-applies the undone flip** instead of stepping back. Undo pushes the reverse move onto the stack. On L4, after 2 flips: undo#1 → [1,1,0], undo#2 → [0,1,1], which is the post-flip-2 state again. used=4. Shot `undo_twice_L4_390.png`. |
-| TO-003 | P2 | Game Finder + MVP Builder | **The stuck banner's "undo" can never lead to a win.** One flip changes the distance by ≤1. With budget par+2 the banner fires only at slack ≤1, and undo costs 1 more. Observed: stuck-Undo on L1 immediately shows "Can't finish in 2 flips" (`stuck_L1_390.png`). The copy "undo or restart" is misleading, so make the banner restart-only or change the economy. As a side effect, any mistake plus undo = par+2, so the run caps at ★. |
-| TO-004 | P2 | MVP Builder | **The 4th pancake in a stack is drawn at alpha 0.45, which washes out the burnt/golden cue.** Pixel measurement on every pancake at level start, 320×568 and 390×844:<br>• Depth 1–3: 100% classified correctly, burnt vs golden contrast ≥6.9:1.<br>• Depth 4: up-band contrast 1.97:1, underside 1.51:1. All 8/300 band misclassifications are depth-4 bands (L5, L8, L9, L10).<br>Planning on L8–L10 needs those bottoms. |
-| TO-005 | P3 | MVP Builder | Tap-then-tap is not implemented for touch. BUILD_NOTES claims it as an accessibility alternative, but only the keyboard path uses `selected`. |
-| TO-006 | P3 | MVP Builder | The top-edge hit overlap: the top ~6 px of a pancake selects the one above (full-box misfires 1–6/100). |
-| TO-007 | P3 | MVP Builder | A 233–316 ms long frame on the first flip at CPU 4×. The fps claim "min 59.5" did not reproduce (58.1 in their own test in my run). It still passes the 50 gate. |
-| TO-008 | P3 | MVP Builder | Undo during an animation is silently dropped (used 1, undos 0). A queued move survives under the stuck banner (queue=1, never replayed). |
-| TO-009 | P3 | Game Finder | The sim's "+probe" variants (e.g. 61.7 vs 55.0) are pure Monte Carlo noise. Exact computation shows probe ≡ plain, for the reason in TO-003. This is an SL-008-like sim artifact. |
-| TO-010 | P3 | MVP Builder | The top ~45% of the portrait screen is unused. The `wobble` variable is computed but never drawn. |
+| TO-011 | **P1** | MVP Builder | **A queued move still plays after the level has ended.** `finishAnim` pumps the queue before revealing the outcome, and `moveLegal` doesn't check won or flips.<br>(a) L1: make the winning flip, then drag again within its 400 ms → the win is erased (`[[0,0],[],[2,2,2,0]]`), with no win card. **12/12** (4 sizes × 3).<br>(b) L1 at flips = 1: last flip plus 1–2 queued drags → flips **−1 / −2**, used 6–7 of a budget of 5, fail card. **12/12** (−1 runs) plus 1 (−2). Shots `edge_queued_after_win_390.png`, `edge_queued_after_fail_390.png`.<br>Fix: clear or reject the queue once the result is win or fail (stuck may continue), and reject any move when flips ≤ 0. |
+| TO-012 | P2 | MVP Builder | **A drag that starts off a pancake throws `TypeError: Cannot read properties of null (reading 'plate')`** in `endDrag` because `d.lift` is null. This happens when a drag starts in the 4 px gap between pancakes, on empty counter, or on a spot that a queued flip has just emptied. The drag is lost with no feedback. Seen at 320 and 390 in probes, in the R0 gesture regression, and 2 times in each fuzz run. These are the only console errors in R1. |
+| TO-013 | P3 | MVP Builder | The stuck copy says "undo or restart", but the card offers only Restart (`stuck_card_390.png`). |
+| TO-014 | P3 | MVP Builder | Release-time rejections give no reject event or red flash. In fuzzing, a drag that was legal when it started became illegal at release because a queued flip had run meanwhile. It got only the short 220 ms source wobble (8/180 drags at 320, 5/165 at 390). This is not a queued-move drop. |
 
-## G. Game Finder asks
-1. **Lazy clear rate ≤30% on L7–L10, exact (SIMULATION, budget par+2, exact Markov over all states):**
-   - Greedy-1 with 2-move lookahead (g1x2): L1–L10 = 76.56 / 75.78 / 63.37 / 24.51 / 25.54 / 41.41 / **8.87 / 11.15 / 1.19 / 2.19 %**. ✓ Max on L7–L10 is 11.15%, on L8. The brief's sampled max of 10.0% understates this slightly.
-   - Plain greedy-1: L3 27.6, L4 7.23, L9 0.07, L10 0.12.
-   - Random play: ~0 from L4 on.
-   - L6 is 41.4%, which is above 30%, but the limit only applies from L7.
-   - Sim check: the probe variants are an artifact (TO-009).
-2. **Burnt/golden readable mid-stack at 320 and 390:**
-   - Method: automated pixel classification of the up band and the underside band of all 150 start-of-level pancakes at each size, from real screenshots, plus my own single-rater visual review (e.g. `crop_s320_L9_stacks.png`).
-   - Depth 1–3: 100%, contrast ≥6.9:1. Depth 4: weak (TO-004).
-   - **The 5-humans, 5/5-within-2 s test was not run.** That needs people.
-3. **Misfires below 3 per 100 drags:** ✓ 0/100 at all three sizes for central touches. The full-box stress test was 1–6/100 (TO-006).
-4. **Drags during animation queued, never dropped:** ✓ in 4/4 timing cases. ✗ in one edge case (TO-001b), and queued moves can break rules (TO-001a).
-5. **Stuck banner exact over ≥20 spot checks:** ✓ 507 in-browser checks, 0 wrong, plus exhaustive/sampled checks (section C).
-6. **L9 vs L10, measurable proxies:**
+**"No queued move is ever silently dropped": holds.** In the fuzz runs, every *queued* move ended as either a `flip` or a `reject` event (shake plus flash). The only lost inputs were drags that never got queued: TO-012 (silent, with an error) and TO-014 (wobble only).
 
-   | Proxy | L9 | L10 |
-   |---|---|---|
-   | Par | 8 | 9 |
-   | States within 6 flips | 195,417 | 454,449 |
-   | Optimal lines | 22 | 73 |
-   | Fatal openings | 6 | 0 |
-   | Exact g1x2 clear rate | 1.19% | 2.19% |
+## E. Regression
+- **Stuck banner:** 590 in-browser spot checks on L7–L10 after real drags (145 stuck states), 0 wrong.
+- **Layout:** 19 sizes, 320×568 to 480×1000, all levels, 4-high boxes: nothing off-screen or overlapping.
+- **Offline:** file:// with the network off → win, 0 non-file requests.
+- **Overlays:**
+  - Triple tap on win-Next advances one level.
+  - Triple tap on lesson-OK leaves the state clean.
+  - Triple tap on stuck-Restart gives one clean restart.
+  - Double tap on fail-Restart is clean.
+- **Rotate and resize:** the landscape overlay appears and drags are ignored. Rotating back and resizing to 360×640 keeps the state, and drags work afterwards.
+- **Gestures:**
+  - Commit nothing: an 8 px drag, a drop back on the same plate, a drop in the gap, a drop on a full plate, the 4th pancake, touchcancel, a two-finger touch.
+  - Commit, because the target is chosen by x only: a release over the HUD or bar, a diagonal drag.
+- **fps (my measurement, 390, DPR 2, 4× CPU, L10 solve):**
+  - First 3 runs: mean 57.5 / 58.7 / 59.8, worst 30-frame window 40.0 / 54.6 / 58.1.
+  - Repeat 3 runs: 59.5 / 59.9 / 59.9, worst windows 54.6 / 58.1 / 58.1.
+  - The builder's own test in my run: 58.2 / 60.0 / 59.5.
 
-   L10 is bigger but more forgiving. Whether it *feels* harder is a human call.
-7. **Human checks for the playtest (NOT done):** brief H1–H5; the 5-player 2-second face-identification test; the opacity test with 3–5 players on L7–L10; and the originality review.
-
-## H. Builder claim checks
+## F. Builder claims
 | Claim | Result |
 |---|---|
-| 14/14 tests | ✓ |
-| 10 reference lines at ★★★ | ✓ (real drags, 4 widths) |
-| Lazy 5.0 / 12.5 / 2.5 / 2.5% | ≈ consistent. The seeded N=40/80 samples are within noise of the exact 8.87 / 11.15 / 1.19 / 2.19 |
-| 0/100 misfires | ✓ for central touches. Their test is weak: it only drags L1's top pancake from its centre |
-| Min fps 59.5 | ✗ not reproduced (58.1 in their test, worst 30-frame window 40.9 in mine) |
-| Fidelity | ✓ widened to all reachable states, 0 mismatches |
-| Tap-then-tap alternative | ✗ keyboard only |
+| TO-001 re-checked, shake, not applied | ✓ for capacity. ✗ for terminal states (TO-011) |
+| TO-002 proper stack | ✓ |
+| TO-003 | ✓ Restart-only (copy mismatch, TO-013) |
+| TO-004 full strength + shadow + dashed rim, ≥4.5:1 | ✓ 6.91:1 |
+| Tap-then-tap for touch | Partial (empty column area only) |
+| Fixed hit boxes | ✓ (but gap/empty starts now throw, TO-012) |
+| Opening flips prewarmed | Mostly (spike in 1/6 runs) |
+| Undo queued during animation | ✓ via mouse; touch unconfirmed (C, TO-008) |
+| Stacks moved higher | ✓ |
+| 0/100 misfires incl. top edges | ✓ on L9/L10 at 4 sizes. I did not test L1/L4 |
+| 17/17 tests | ✓ |
+| Min fps 59.5 | ✗ not reproduced as a minimum. Their test gave 58.2 in my run; still well above the 50 gate |
 
-## I. Next steps
-Fix TO-001 and TO-002, decide the TO-003 economy/copy, raise depth-4 contrast, then R1. Run the human checks in G7.
-Key shots: `q2_overcap_390.png`, `undo_twice_L4_390.png`, `stuck_L1_390.png`, `fail_L1_390.png`, `read_320x568_L9.png`, `crop_s320_L9_stacks.png`, `s390_L10_win.png`, `landscape_844x390.png`.
+## G. Game Finder asks (status)
+Lazy odds unchanged (rules unchanged) ✓. Readability ✓ at all depths, measured automatically; the 5-human 2 s test has **not been run**. Misfires ✓. Queue never drops a queued move ✓, but TO-011 is open. Stuck banner ✓ exact. L9 vs L10 proxies unchanged from R0. Human checks H1–H5, the opacity test and the originality review are still pending.
+
+## H. Next (cycle 2)
+1. Fix TO-011: stop the queue at win/fail and require flips > 0.
+2. Guard `endDrag` when `d.lift` is null (TO-012).
+3. Change the stuck copy (TO-013).
+4. Optionally make a tap on a target-plate pancake complete tap-then-tap.
+5. Confirm undo taps during animation on a real phone.
+
+## I. Key shots
+`to001_a_390.png`, `edge_queued_after_win_390.png`, `edge_queued_after_fail_390.png`, `stuck_card_390.png`, `read_390x844_L9.png`, `read_320x568_L9.png`, `undo_rapid_L9_390.png`, `landscape_844x390.png`.

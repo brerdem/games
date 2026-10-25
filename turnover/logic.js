@@ -178,10 +178,25 @@
   }
 
   function prewarm(level) {
-    canFinish(level.plates, level.budget, level);
-    var moves = legalMoves(level.plates);
-    for (var i = 0; i < moves.length; i++) {
-      canFinish(apply(level.plates, moves[i], level.sided), level.budget - 1, level);
+    var ply = level.budget <= 7 ? 2 : 1;
+    var frontier = [clone(level.plates)];
+    for (var depth = 0; depth <= ply; depth++) {
+      var next = [];
+      for (var i = 0; i < frontier.length; i++) {
+        canFinish(frontier[i], level.budget - depth, level);
+        if (depth === ply) continue;
+        var moves = legalMoves(frontier[i]);
+        for (var m = 0; m < moves.length; m++) next.push(apply(frontier[i], moves[m], level.sided));
+      }
+      frontier = next;
+    }
+    if (level.budget > 7) return;
+    var along = clone(level.plates);
+    var left = level.budget;
+    for (var r = 0; r < level.ref.length; r++) {
+      along = apply(along, level.ref[r], level.sided);
+      left -= 1;
+      canFinish(along, left, level);
     }
   }
 
@@ -208,7 +223,7 @@
   }
 
   function stuckText(flipsLeft) {
-    return "Can't finish in " + flipsLeft + " flips — undo or restart";
+    return "Can't finish in " + flipsLeft + " flips — restart";
   }
 
   function levels() {
