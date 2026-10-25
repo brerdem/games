@@ -18,7 +18,6 @@ const GAMES = [
   'foldprint',
   'knock-on',
   'shish-lane',
-  'turnover',
 ];
 const PHONE = 390 / 844;
 
