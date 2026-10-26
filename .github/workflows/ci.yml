@@ -111,4 +111,4 @@ jobs:
       - run: npm install
       - run: npx playwright install chromium --with-deps
       - name: Whisk Away logic and browser gate
-        run: node --test --test-timeout=180000 whisk-away/tests/logic.test.mjs whisk-away/tests/browser.test.mjs whisk-away/tests/browser-reference.test.mjs whisk-away/tests/browser-handles.test.mjs whisk-away/tests/browser-load.test.mjs whisk-away/tests/misfire-320.test.mjs whisk-away/tests/misfire-360.test.mjs whisk-away/tests/misfire-390.test.mjs whisk-away/tests/misfire-430.test.mjs
+        run: node --test --test-timeout=180000 whisk-away/tests/logic.test.mjs whisk-away/tests/browser.test.mjs whisk-away/tests/browser-reference.test.mjs whisk-away/tests/browser-handles.test.mjs whisk-away/tests/browser-offspot.test.mjs whisk-away/tests/browser-load.test.mjs whisk-away/tests/misfire-320.test.mjs whisk-away/tests/misfire-360.test.mjs whisk-away/tests/misfire-390.test.mjs whisk-away/tests/misfire-430.test.mjs

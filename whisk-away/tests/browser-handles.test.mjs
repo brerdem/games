@@ -41,6 +41,19 @@ test('handles and 44px targets stay inside the canvas', async () => {
             if (n === 7 && s === 0 && handle.i === 3) {
               assert.equal(handle.tasselHit, 3, where + ' cream handle hit ' + handle.tasselHit);
             }
+            for (const other of report.list) {
+              if (other.i === handle.i) continue;
+              const overlapHandle = handle.tassel.x < other.tassel.x + other.tassel.w
+                && other.tassel.x < handle.tassel.x + handle.tassel.w
+                && handle.tassel.y < other.tassel.y + other.tassel.h
+                && other.tassel.y < handle.tassel.y + handle.tassel.h;
+              assert.equal(overlapHandle, false, where + ' overlaps c' + other.i + ' handle');
+              const overlapBody = handle.tassel.x < other.cloth.x + other.cloth.w
+                && other.cloth.x < handle.tassel.x + handle.tassel.w
+                && handle.tassel.y < other.cloth.y + other.cloth.h
+                && other.cloth.y < handle.tassel.y + handle.tassel.h;
+              assert.equal(overlapBody, false, where + ' drawn over c' + other.i);
+            }
           }
         }
       }

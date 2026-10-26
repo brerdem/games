@@ -40,6 +40,9 @@
   var blockUntilLift = false;
   var guardRect = null;
   var guardUntil = 0;
+  var tapQuietUntil = 0;
+  var staticCanvas = null;
+  var staticKey = '';
   var lastGesture = null;
   var winShown = false;
   var failShown = false;
@@ -135,51 +138,18 @@
     hideAll();
     syncChrome();
     layoutGeom();
+    if (level._graph) solverMs = 0;
+    else {
+      var started = now();
+      TL.graph(level);
+      solverMs = now() - started;
+    }
+    solverReady = true;
+    staticKey = '';
     paint();
     quiet();
     ensureAudio();
     document.getElementById('loading').classList.add('hidden');
-    if (level._graph) {
-      solverReady = true;
-      solverMs = 0;
-      return;
-    }
-    // L8–L10: paint the table first, then search. A synchronous search
-    // (or the first slice of one) was keeping the board hidden.
-    var late = level.n >= 8;
-    if (!late) {
-      var started = now();
-      TL.graph(level);
-      solverMs = now() - started;
-      solverReady = true;
-      return;
-    }
-    solverReady = false;
-    solverMs = 0;
-    var job = TL.beginGraph(level);
-    var clock = 0;
-    var pumpSolver = function () {
-      if (token !== solveToken) return;
-      if (!clock) clock = now();
-      var slice = now();
-      var done = TL.stepGraph(job, 8000);
-      solverMs += now() - slice;
-      if (!done) {
-        setTimeout(pumpSolver, 0);
-        return;
-      }
-      solverMs = now() - clock;
-      solverReady = true;
-      if (!anim && !queue.length && !settled) reveal(judge());
-      syncChrome();
-      paint();
-    };
-    var armSolver = function () {
-      if (token !== solveToken) return;
-      setTimeout(pumpSolver, 40);
-    };
-    if (document.readyState === 'complete') armSolver();
-    else window.addEventListener('load', armSolver, { once: true });
   }
 
   function quiet() { quietUntil = now() + 350; }
@@ -460,9 +430,51 @@
 
   function ease(t) { return 1 - Math.pow(1 - t, 3); }
 
+  function canBlit() {
+    return !!(state && geom && !drag && !anim && particles.length === 0 && !wobble && !laneFlash && !(cleanStamp > now()));
+  }
+
+  function sceneKey() {
+    return TL.keyOf(state.board) + '|' + geom.cell + '|' + cssW + '|' + cssH + '|' + dpr + '|' + state.n + '|' + state.used;
+  }
+
+  function ensureStatic() {
+    var key = sceneKey();
+    if (staticCanvas && staticKey === key) return;
+    staticKey = key;
+    if (!staticCanvas) staticCanvas = document.createElement('canvas');
+    staticCanvas.width = Math.max(1, Math.round(cssW * dpr));
+    staticCanvas.height = Math.max(1, Math.round(cssH * dpr));
+    var g = staticCanvas.getContext('2d');
+    var prev = ctx;
+    ctx = g;
+    try {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      drawTable();
+      drawAudience();
+      drawMarks(false);
+      drawCloths();
+      drawDishes();
+      drawTassels();
+      drawGrabs();
+      if (state.n <= 4 && state.used === 0 && !overlayOpen()) drawCoach();
+    } finally {
+      ctx = prev;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }
+
   function paint() {
-    ctx.clearRect(0, 0, cssW, cssH);
     if (!state || !geom) return;
+    if (canBlit()) {
+      ensureStatic();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(staticCanvas, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return;
+    }
+    ctx.clearRect(0, 0, cssW, cssH);
     drawTable();
     drawAudience();
     drawMarks(false);
@@ -821,20 +833,100 @@
     };
   }
 
-  function tasselBox(i, board, extra) {
-    var cloth = clothScreen(i, board, extra);
+  function boxInside(box) {
+    return box.x >= 2 && box.y >= 2 && box.x + box.w <= cssW - 2 && box.y + box.h <= cssH - 2;
+  }
+
+  function nearOwn(cloth, box, gap) {
+    return boxesOverlap(box, { x: cloth.x - gap, y: cloth.y - gap, w: cloth.w + gap * 2, h: cloth.h + gap * 2 });
+  }
+
+  function overlapsOtherBody(i, board, box) {
+    var level = state.level;
+    for (var k = 0; k < level.cloths.length; k++) {
+      if (k === i || !TL.on(board, k)) continue;
+      if (boxesOverlap(box, clothScreen(k, board, null))) return true;
+    }
+    return false;
+  }
+
+  function overlapsList(list, box) {
+    for (var i = 0; i < list.length; i++) if (list[i] && boxesOverlap(list[i], box)) return true;
+    return false;
+  }
+
+  function tabOnSide(cloth, side, long, thick, outward, shift) {
+    if (side === 'E') return { x: cloth.x + cloth.w - 2 + outward, y: cloth.y + (cloth.h - long) / 2 + shift, w: thick, h: long };
+    if (side === 'W') return { x: cloth.x - thick + 2 - outward, y: cloth.y + (cloth.h - long) / 2 + shift, w: thick, h: long };
+    if (side === 'S') return { x: cloth.x + (cloth.w - long) / 2 + shift, y: cloth.y + cloth.h - 2 + outward, w: long, h: thick };
+    return { x: cloth.x + (cloth.w - long) / 2 + shift, y: cloth.y - thick + 2 - outward, w: long, h: thick };
+  }
+
+  function placeOneTassel(i, board, placed) {
+    var cloth = clothScreen(i, board, null);
     var dir = state.level.cloths[i][4];
     var long = Math.max(22, geom.cell * 0.34);
     var thick = Math.max(14, geom.cell * 0.2);
-    var box;
-    if (dir === 'E') box = { x: cloth.x + cloth.w - 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
-    else if (dir === 'W') box = { x: cloth.x - thick + 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
-    else if (dir === 'S') box = { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y + cloth.h - 2, w: long, h: thick };
-    else box = { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y - thick + 2, w: long, h: thick };
-    var fitted = clampBox(box);
-    fitted.w = box.w;
-    fitted.h = box.h;
+    var opp = dir === 'E' ? 'W' : dir === 'W' ? 'E' : dir === 'N' ? 'S' : 'N';
+    var sides = [dir, opp];
+    var all = ['N', 'E', 'S', 'W'];
+    for (var a = 0; a < all.length; a++) if (sides.indexOf(all[a]) < 0) sides.push(all[a]);
+    var outwards = [0, 4, 8, 12, 16];
+    for (var back = 4; back <= thick + 6; back += 4) outwards.push(-back);
+    var gaps = [4, 28];
+    for (var g = 0; g < gaps.length; g++) {
+      for (var s = 0; s < sides.length; s++) {
+        var side = sides[s];
+        var span = (side === 'E' || side === 'W') ? cloth.h : cloth.w;
+        for (var o = 0; o < outwards.length; o++) {
+          for (var delta = 0; delta <= span; delta += 4) {
+            var shifts = delta === 0 ? [0] : [-delta, delta];
+            for (var h = 0; h < shifts.length; h++) {
+              var box = tabOnSide(cloth, side, long, thick, outwards[o], shifts[h]);
+              if (!boxInside(box)) continue;
+              if (!nearOwn(cloth, box, gaps[g])) continue;
+              if (overlapsOtherBody(i, board, box)) continue;
+              if (overlapsList(placed, box)) continue;
+              return box;
+            }
+          }
+        }
+      }
+    }
+    var fallback = tabOnSide(cloth, dir, long, thick, 0, 0);
+    var fitted = clampBox(fallback);
+    fitted.w = fallback.w;
+    fitted.h = fallback.h;
     return fitted;
+  }
+
+  var tasselCache = null;
+
+  function layoutTassels(board) {
+    var level = state.level;
+    var boxes = new Array(level.cloths.length);
+    var placed = [];
+    for (var i = level.cloths.length - 1; i >= 0; i--) {
+      if (!TL.on(board, i)) continue;
+      boxes[i] = placeOneTassel(i, board, placed);
+      placed.push(boxes[i]);
+    }
+    return boxes;
+  }
+
+  function tasselsFor(board) {
+    var key = TL.keyOf(board) + '|' + geom.cell + '|' + cssW + '|' + cssH;
+    if (tasselCache && tasselCache.key === key) return tasselCache.boxes;
+    var boxes = layoutTassels(board);
+    tasselCache = { key: key, boxes: boxes };
+    return boxes;
+  }
+
+  function tasselBox(i, board, extra) {
+    var base = tasselsFor(board)[i];
+    if (!base) return { x: 0, y: 0, w: 0, h: 0 };
+    if (!extra) return base;
+    return { x: base.x + extra[0] * geom.cell, y: base.y + extra[1] * geom.cell, w: base.w, h: base.h };
   }
 
   var grabCache = null;
@@ -1144,8 +1236,17 @@
     if (anim && t >= anim.t0 + anim.dur) finishAnim();
     if (wobble && t > wobble.until) wobble = null;
     if (laneFlash && t > laneFlash.until) laneFlash = null;
-    particles.forEach(function (p) { p.life -= 1 / 60; p.x += p.vx / 60; p.y += p.vy / 60; });
-    particles = particles.filter(function (p) { return p.life > 0; });
+    if (particles.length) {
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        p.life -= 1 / 60;
+        p.x += p.vx / 60;
+        p.y += p.vy / 60;
+      }
+      var kept = [];
+      for (var j = 0; j < particles.length; j++) if (particles[j].life > 0) kept.push(particles[j]);
+      particles = kept;
+    }
     paint();
     requestAnimationFrame(frame);
   }
@@ -1153,6 +1254,7 @@
   function rememberGuard(rect) {
     guardRect = rect;
     guardUntil = now() + 350;
+    tapQuietUntil = now() + 300;
   }
 
   function inGuard(x, y) {
@@ -1242,7 +1344,12 @@
     var v = TL.DIR[dirName];
     var along = (d.x - d.x0) * v[0] + (d.y - d.y0) * v[1];
     var across = (d.x - d.x0) * (-v[1]) + (d.y - d.y0) * v[0];
-    if (moved < 12 && dt < 300) {
+    var tapQuiet = d.t0 < tapQuietUntil;
+    if (moved < 16 && dt < 320) {
+      if (tapQuiet) {
+        lastTap = null;
+        return;
+      }
       if (lastTap && lastTap.cloth === d.cloth && now() - lastTap.t < 320) {
         lastTap = null;
         playChain(d.cloth, 0, true);
@@ -1254,7 +1361,8 @@
     lastTap = null;
     var speed = releaseSpeed(d.samples, dirName);
     lastGesture = { speed: speed, dt: dt, along: along, samples: d.samples.length, windowDt: lastWindow.dt, windowAlong: lastWindow.along };
-    if (dt <= 250 && speed >= 1 && along > 8) {
+    var minAlong = tapQuiet ? 24 : 8;
+    if (dt <= 250 && speed >= 1 && along >= minAlong) {
       playChain(d.cloth, 0, true);
       return;
     }
@@ -1421,6 +1529,7 @@
         list.push({
           i: i,
           tassel: tassel,
+          cloth: clothScreen(i, state.board, null),
           target: target,
           body: hitBody(tx, ty),
           tasselHit: hitCloth(tx, ty),
