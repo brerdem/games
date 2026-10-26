@@ -1,6 +1,6 @@
 # GF-20261026-01 — Whisk Away — Game Design Brief v1
 
-Date: 2026-10-26 (Europe/Istanbul) · Brief version v1 · Slug `whisk-away` · Author: Game Finder
+Date: 2026-10-26 (Europe/Istanbul) · Brief version v1, with the v1.1 amendment (WA-002 ruling and the new L7/L10 boards, 2026-10-26) recorded in `BRIEF-v1.1.md` · Slug `whisk-away` · Author: Game Finder
 Evidence labels: **[OBS]** observed today with a source; **[SIM]** rule-sandbox result (simulation, not players); **[HYP]** design hypothesis.
 Sandbox: `/workspace/game-ideas/sim/whisk/` (`core2.py` rules, `pack.py` → `pack_v1.json` exact level data, metrics and reference lines).
 
@@ -52,7 +52,7 @@ All observed 2026-10-26 07:09–07:15 UTC+3 (`snapshot_2026-10-26.md`, iTunes lo
 
 ## F. Controls and Interaction
 - **Pull:** touch any visible cell of a cloth (touch on a dish = the cloth under it) and drag **along its pull direction**. The cloth and its riders follow the finger, snapping per cell (with 20% rubber-band preview between cells). On release, each snapped cell commits as one pull (k cells = k moves, applied one at a time with full legality per step; stop at the first refused step).
-- **Whip:** a flick on the cloth: release speed ≥ 1.0 px/ms along the pull direction **and** touch duration ≤ 250 ms → whip (cells already snapped in the same gesture commit first). Accessibility alternative: **double-tap** a cloth = whip. Keyboard: number keys select cloth, `→`/`Space` = pull 1, `W` = whip, `U` = undo, `R` = restart.
+- **Whip (v1.1, WA-002, 2026-10-26):** a gesture whose release speed is ≥ 1.0 px/ms along the pull direction and whose touch lasts ≤ 250 ms is a pure whip. It spends one move and commits none of the pulls that the finger snapped along the way. The snap preview during the drag is cosmetic until release. A double-tap is also a pure whip. Keyboard: number keys select cloth, `→`/`Space` = pull 1, `W` = whip, `U` = undo, `R` = restart.
 - **Dragging against or across the pull direction** does nothing (cloth wiggles). A drag that ends with < 50% of a cell commits nothing.
 - **Refused moves (free, no move spent):** cloth resists like a rubber band, the blocking dish wobbles and its cell flashes red; for a whip, the blocked lane is tinted red for 400 ms.
 - **Undo:** button with the visible word "Undo" and "−1"; costs 1 move; reverts one move exactly. Restart: free, resets the budget.
