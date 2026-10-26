@@ -1,6 +1,6 @@
 # GF-20261026-01 — Whisk Away — Game Design Brief v1
 
-Date: 2026-10-26 (Europe/Istanbul) · Brief version v1, with the v1.1 amendment (WA-002 ruling and the new L7/L10 boards, 2026-10-26) recorded in `BRIEF-v1.1.md` · Slug `whisk-away` · Author: Game Finder
+Date: 2026-10-26 (Europe/Istanbul) · Brief version v1, with the v1.1 amendment (WA-002 ruling and the new L7/L10 boards, 2026-10-26) recorded in `BRIEF-v1.1.md`, and the v1.2 amendment (L7 only, seed 112345, 2026-10-26) recorded in `BRIEF-v1.2.md` · Slug `whisk-away` · Author: Game Finder
 Evidence labels: **[OBS]** observed today with a source; **[SIM]** rule-sandbox result (simulation, not players); **[HYP]** design hypothesis.
 Sandbox: `/workspace/game-ideas/sim/whisk/` (`core2.py` rules, `pack.py` → `pack_v1.json` exact level data, metrics and reference lines).
 

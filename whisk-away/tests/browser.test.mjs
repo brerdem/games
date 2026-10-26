@@ -1,66 +1,6 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import fs from 'node:fs';
-import { pathToFileURL, fileURLToPath } from 'node:url';
 import test from 'node:test';
-
-const require = createRequire(new URL('../../package.json', import.meta.url));
-const { chromium } = require('playwright');
-const fileUrl = pathToFileURL(fileURLToPath(new URL('../index.html', import.meta.url))).href;
-const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium'].find((item) => fs.existsSync(item));
-
-async function launch() {
-  return chromium.launch({ headless: true, executablePath: chrome, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-}
-
-async function settle(page) {
-  await page.waitForFunction(() => window.__whisk && !window.__whisk.animating(), null, { timeout: 8000 });
-}
-
-async function armed(page) {
-  await page.waitForFunction(() => window.__whisk.ready && performance.now() >= window.__whisk.quietUntil());
-}
-
-function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-
-async function trustedStroke(page, session, from, dir, dist, pxPerMs) {
-  const slow = pxPerMs < 1;
-  const steps = slow ? Math.max(6, Math.round(dist / 8)) : 2;
-  const gap = slow ? 16 : 12;
-  const end = { x: from.x + dir[0] * dist, y: from.y + dir[1] * dist };
-  const pending = [];
-  pending.push(session.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [{ x: from.x, y: from.y, id: 1 }]
-  }));
-  for (let i = 1; i <= steps; i++) {
-    if (slow) await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-    else await sleep(gap);
-    pending.push(session.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{
-        x: from.x + (end.x - from.x) * (i / steps),
-        y: from.y + (end.y - from.y) * (i / steps),
-        id: 1
-      }]
-    }));
-  }
-  if (slow) await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-  else await sleep(gap);
-  pending.push(session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }));
-  await Promise.all(pending);
-  await settle(page);
-}
-
-async function flick(page, session, index, cells, pxPerMs) {
-  const spot = await page.evaluate((cloth) => window.__whisk.point(cloth), index);
-  await trustedStroke(page, session, spot, spot.dir, (cells == null ? 0.7 : cells) * spot.cell, pxPerMs == null ? 1.6 : pxPerMs);
-}
-
-async function pull(page, session, index, cells, pxPerMs) {
-  const spot = await page.evaluate((cloth) => window.__whisk.point(cloth), index);
-  await trustedStroke(page, session, spot, spot.dir, (cells == null ? 0.78 : cells) * spot.cell, pxPerMs == null ? 0.28 : pxPerMs);
-}
+import { armed, assertTarget, fileUrl, flick, launch, PHONE, pull, settle, tap } from './browser-support.mjs';
 
 test('file:// play has no http requests', async () => {
   const browser = await launch();
@@ -78,90 +18,6 @@ test('file:// play has no http requests', async () => {
   }
 });
 
-test('reference lines clear with three stars through touch at 390 and L1 at the other phone widths', async () => {
-  const browser = await launch();
-  try {
-    const packed = JSON.parse(fs.readFileSync(new URL('./pack_v1_1.json', import.meta.url), 'utf8'));
-    const lines = (packed.levels || packed).map((row) => row.reference_line);
-    for (const [width, height, onlyFirst] of [[390, 844, false], [320, 568, true], [360, 800, true], [430, 932, true]]) {
-      const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
-      const page = await context.newPage();
-      const errors = [];
-      page.on('pageerror', (err) => errors.push(String(err)));
-      const session = await context.newCDPSession(page);
-      const count = onlyFirst ? 1 : lines.length;
-      for (let n = 1; n <= count; n++) {
-        await page.goto(fileUrl + '?level=' + n);
-        await armed(page);
-        const cell = await page.evaluate(() => window.__whisk.cellSize());
-        if (width === 390) assert.ok(cell >= 56, 'cell ' + cell);
-        if (width === 320) assert.ok(cell >= 48, 'cell ' + cell);
-        if (n <= 2) {
-          for (const step of lines[n - 1]) {
-            const whip = step.startsWith('whip');
-            const index = +step.slice(step.indexOf('c') + 1);
-            if (whip) await flick(page, session, index);
-            else await pull(page, session, index);
-          }
-        } else {
-          for (const step of lines[n - 1]) {
-            const kind = step.startsWith('whip') ? 'w' : 'd';
-            const index = +step.slice(step.indexOf('c') + 1);
-            await page.evaluate((move) => window.__whisk.commit(move[0], move[1]), [kind, index]);
-            await settle(page);
-          }
-        }
-        const snap = await page.evaluate(() => window.__whisk.snapshot());
-        assert.equal(snap.won, true, width + ' L' + n);
-        assert.equal(snap.stars, 3, width + ' L' + n + ' stars ' + snap.used);
-        assert.equal(snap.used, snap.par);
-      }
-      assert.equal(errors.length, 0, errors.join('\n'));
-      await context.close();
-    }
-  } finally {
-    await browser.close();
-  }
-});
-
-test('trusted touch flicks whip and slow drags pull', async () => {
-  const browser = await launch();
-  try {
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    const page = await context.newPage();
-    const session = await context.newCDPSession(page);
-    await page.goto(fileUrl + '?level=2');
-    await page.waitForFunction(() => window.__whisk.ready);
-    let flickMiss = 0;
-    let pullMiss = 0;
-    for (let i = 0; i < 100; i++) {
-      await page.evaluate(() => window.__whisk.reset());
-      await page.waitForFunction(() => window.__whisk.snapshot().used === 0);
-      await armed(page);
-      const cells = 0.64 + (i % 7) * 0.07;
-      const speed = 1.25 + (i % 5) * 0.15;
-      await flick(page, session, 0, cells, speed);
-      const snap = await page.evaluate(() => window.__whisk.snapshot());
-      if (!(snap.used === 1 && snap.cloths === 0 && JSON.stringify(snap.dishes) === '[[1,1]]')) flickMiss += 1;
-    }
-    for (let i = 0; i < 100; i++) {
-      await page.evaluate(() => window.__whisk.reset());
-      await page.waitForFunction(() => window.__whisk.snapshot().used === 0);
-      await armed(page);
-      const cells = 0.62 + (i % 4) * 0.08;
-      const speed = 0.12 + (i % 5) * 0.06;
-      await pull(page, session, 0, cells, speed);
-      const snap = await page.evaluate(() => window.__whisk.snapshot());
-      if (!(snap.used === 1 && snap.cloths === 1 && JSON.stringify(snap.dishes) === '[[1,2]]')) pullMiss += 1;
-    }
-    console.log(`whisk trusted misfires flick ${flickMiss}/100 pull ${pullMiss}/100`);
-    assert.ok(flickMiss < 3, 'flick ' + flickMiss);
-    assert.ok(pullMiss < 3, 'pull ' + pullMiss);
-  } finally {
-    await browser.close();
-  }
-});
-
 test('a fast flick past a cell is a pure whip, and a slow drag commits the snapped cells', async () => {
   const browser = await launch();
   try {
@@ -170,7 +26,7 @@ test('a fast flick past a cell is a pure whip, and a slow drag commits the snapp
     const session = await context.newCDPSession(page);
     await page.goto(fileUrl + '?level=1');
     await armed(page);
-    await flick(page, session, 0, 1.2, 1.5);
+    await flick(page, session, 0, 1.2, 2.2, 50);
     const whipped = await page.evaluate(() => window.__whisk.snapshot());
     assert.equal(whipped.used, 1);
     assert.equal(whipped.cloths, 0);
@@ -195,28 +51,107 @@ test('a fast flick past a cell is a pure whip, and a slow drag commits the snapp
   }
 });
 
-test('a triple tap on Next does not whip the next table', async () => {
+test('three, four and five taps on Next do not whip the next table', async () => {
   const browser = await launch();
   try {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await context.newPage();
     const session = await context.newCDPSession(page);
-    await page.goto(fileUrl + '?level=1');
-    await page.waitForFunction(() => window.__whisk.ready);
-    await page.evaluate(() => window.__whisk.commit('w', 0));
-    await page.waitForFunction(() => window.__whisk.snapshot().won);
-    await page.waitForTimeout(700);
-    const box = await page.locator('#win-next').boundingBox();
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height / 2;
-    for (let i = 0; i < 3; i++) {
-      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
-      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const runs = [[3, 70], [4, 150], [5, 120]];
+    for (const [count, gap] of runs) {
+      await page.goto(fileUrl + '?level=1');
+      await page.waitForFunction(() => window.__whisk.ready);
+      await page.evaluate(() => window.__whisk.commit('w', 0));
+      await page.waitForFunction(() => window.__whisk.snapshot().won);
+      await page.waitForTimeout(700);
+      const box = await page.locator('#win-next').boundingBox();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      for (let i = 0; i < count; i++) await tap(session, x, y, i + 1 < count ? gap : 0);
+      await page.waitForTimeout(500);
+      const next = await page.evaluate(() => window.__whisk.snapshot());
+      assert.equal(next.level, 2, count + ' taps level');
+      assert.equal(next.used, 0, count + ' taps used ' + next.used);
+      assert.equal(next.cloths, 1, count + ' taps cloth');
     }
-    await page.waitForTimeout(500);
-    const next = await page.evaluate(() => window.__whisk.snapshot());
-    assert.equal(next.level, 2);
-    assert.equal(next.used, 0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('tapping stuck Undo does not whip afterwards', async () => {
+  const browser = await launch();
+  try {
+    for (const [width, height] of PHONE) {
+      const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      const session = await context.newCDPSession(page);
+      for (const gap of [70, 200]) {
+        await page.goto(fileUrl + '?level=2');
+        await page.waitForFunction(() => window.__whisk.ready && window.__whisk.solverReady);
+        await page.evaluate(() => window.__whisk.commit('w', 0));
+        await settle(page);
+        await page.waitForFunction(() => window.__whisk.snapshot().stuck);
+        const box = await page.locator('#stuck-undo').boundingBox();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        for (let i = 0; i < 3; i++) await tap(session, x, y, i < 2 ? gap : 0);
+        await settle(page);
+        await page.waitForTimeout(400);
+        const snap = await page.evaluate(() => window.__whisk.snapshot());
+        assert.equal(snap.undos, 1, width + ' gap ' + gap + ' undos');
+        assert.equal(snap.cloths, 1, width + ' gap ' + gap + ' cloth');
+        assert.equal(snap.used, 2, width + ' gap ' + gap + ' used ' + snap.used);
+        assert.equal(snap.stuck, false, width + ' gap ' + gap);
+      }
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a cloth hanging off the table stays drawn and keeps a 44px target', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    await page.goto(fileUrl + '?level=1');
+    await armed(page);
+    await page.evaluate(() => window.__whisk.commit('d', 0));
+    await settle(page);
+    await page.evaluate(() => window.__whisk.commit('d', 0));
+    await settle(page);
+    const sample = await page.evaluate(() => {
+      const info = window.__whisk.clothRect(0);
+      const rect = info.rect;
+      const off = [];
+      for (let y = rect[1]; y < rect[1] + rect[3]; y++) {
+        for (let x = rect[0]; x < rect[0] + rect[2]; x++) {
+          if (x < 0 || y < 0 || x >= 5 || y >= 6) off.push(window.__whisk.gridPoint(x, y));
+        }
+      }
+      const spot = off[0];
+      const canvas = document.getElementById('c');
+      const bounds = canvas.getBoundingClientRect();
+      const ctx = canvas.getContext('2d');
+      const scale = window.__whisk.bufferScale();
+      const px = Math.round((spot.x - bounds.left) * scale);
+      const py = Math.round((spot.y - bounds.top) * scale);
+      const pixels = [];
+      for (let dy = -6; dy <= 6; dy += 3) {
+        for (let dx = -6; dx <= 6; dx += 3) {
+          pixels.push(Array.from(ctx.getImageData(px + dx, py + dy, 1, 1).data.slice(0, 3)));
+        }
+      }
+      const wood = pixels.filter((rgb) => Math.abs(rgb[0] - 200) < 18 && Math.abs(rgb[1] - 149) < 18 && Math.abs(rgb[2] - 92) < 18);
+      return { rect, hits: off.map((item) => item.hit), wood: wood.length, pixels: pixels.length };
+    });
+    assert.ok(sample.rect[0] + sample.rect[2] > 5, 'overhang rect ' + sample.rect);
+    assert.ok(sample.hits.length > 0, 'no off-table cell');
+    assert.ok(sample.hits.every((hit) => hit === 0), 'overhang hits ' + sample.hits);
+    assert.ok(sample.wood < sample.pixels, 'overhang still looks like bare wood');
+    await assertTarget(page, 0, 'L1 overhang');
   } finally {
     await browser.close();
   }

@@ -12,8 +12,8 @@ vm.runInContext(fs.readFileSync(new URL('../logic.js', import.meta.url), 'utf8')
 const W = sandbox.WhiskLogic;
 const LEVELS = W.levels();
 const PACK_V1 = JSON.parse(fs.readFileSync(new URL('./pack_v1.json', import.meta.url), 'utf8'));
-const PACK_FILE = JSON.parse(fs.readFileSync(new URL('./pack_v1_1.json', import.meta.url), 'utf8'));
-const PACK = PACK_FILE.levels;
+const PACK_V11 = JSON.parse(fs.readFileSync(new URL('./pack_v1_1.json', import.meta.url), 'utf8')).levels;
+const PACK = JSON.parse(fs.readFileSync(new URL('./pack_v1_2.json', import.meta.url), 'utf8')).levels;
 
 function digest(level) {
   const g = W.graph(level);
@@ -47,17 +47,33 @@ test('reference lines clear at par and the pack counts match', () => {
   assert.ok(LEVELS.slice(0, 9).every((level) => level.par < 10));
   assert.equal(W.stuckText(1), "Can't set the table in 1 move");
   assert.equal(W.stuckText(4), "Can't set the table in 4 moves");
-  for (const index of [0, 1, 2, 3, 4, 5, 7, 8]) {
-    assert.deepEqual(PACK[index].cloths, PACK_V1[index].cloths, 'cloths L' + (index + 1));
-    assert.deepEqual(PACK[index].dishes, PACK_V1[index].dishes, 'dishes L' + (index + 1));
-    assert.deepEqual(PACK[index].targets, PACK_V1[index].targets, 'marks L' + (index + 1));
-    assert.deepEqual(PACK[index].reference_line, PACK_V1[index].reference_line, 'ref L' + (index + 1));
-    assert.equal(PACK[index].par, PACK_V1[index].par);
+  for (let index = 0; index < 10; index++) {
+    assert.equal(JSON.stringify(LEVELS[index].cloths), JSON.stringify(PACK[index].cloths), 'logic cloths L' + (index + 1));
+    assert.equal(JSON.stringify(LEVELS[index].dishes), JSON.stringify(PACK[index].dishes), 'logic dishes L' + (index + 1));
+    assert.equal(JSON.stringify(LEVELS[index].targets), JSON.stringify(PACK[index].targets), 'logic marks L' + (index + 1));
+    assert.equal(LEVELS[index].par, PACK[index].par);
+    assert.equal(LEVELS[index].expectStates, PACK[index].reachable_states);
+    if (index === 6) continue;
+    assert.deepEqual(PACK[index].cloths, PACK_V11[index].cloths, 'v1.2 cloths L' + (index + 1));
+    assert.deepEqual(PACK[index].dishes, PACK_V11[index].dishes, 'v1.2 dishes L' + (index + 1));
+    assert.deepEqual(PACK[index].targets, PACK_V11[index].targets, 'v1.2 marks L' + (index + 1));
+    assert.deepEqual(PACK[index].reference_line, PACK_V11[index].reference_line, 'v1.2 ref L' + (index + 1));
+    assert.equal(PACK[index].par, PACK_V11[index].par);
+    assert.equal(PACK[index].reachable_states, PACK_V11[index].reachable_states);
   }
-  assert.equal(PACK[6].source_seed, 110060);
-  assert.equal(PACK[9].source_seed, 121131);
+  for (const index of [0, 1, 2, 3, 4, 5, 7, 8]) {
+    assert.deepEqual(PACK[index].cloths, PACK_V1[index].cloths, 'v1 cloths L' + (index + 1));
+    assert.deepEqual(PACK[index].reference_line, PACK_V1[index].reference_line, 'v1 ref L' + (index + 1));
+  }
+  assert.equal(PACK[6].source_seed, 112345);
+  assert.equal(PACK[6].par, 7);
+  assert.equal(PACK[6].budget, 9);
+  assert.deepEqual(PACK[6].reference_line, ['whip c0', 'drag c1', 'whip c1', 'drag c2', 'drag c2', 'whip c2', 'whip c3']);
+  assert.notDeepEqual(PACK[6].cloths, PACK_V11[6].cloths);
   assert.notDeepEqual(PACK[6].cloths, PACK_V1[6].cloths);
+  assert.equal(PACK[9].source_seed, 121131);
   assert.notDeepEqual(PACK[9].cloths, PACK_V1[9].cloths);
+  assert.deepEqual(PACK[9].cloths, PACK_V11[9].cloths);
 });
 
 test('the JS graph matches the Python sim on every level', () => {
@@ -65,7 +81,7 @@ test('the JS graph matches the Python sim on every level', () => {
 import json, hashlib, sys
 sys.path.insert(0, ${JSON.stringify(new URL('./', import.meta.url).pathname)})
 from core2 import *
-raw = json.load(open(${JSON.stringify(new URL('./pack_v1_1.json', import.meta.url).pathname)}))
+raw = json.load(open(${JSON.stringify(new URL('./pack_v1_2.json', import.meta.url).pathname)}))
 pack = raw['levels'] if isinstance(raw, dict) else raw
 def flat_key(st):
     offs, pres, ds = st
@@ -120,9 +136,13 @@ test('lazy play stays under the brief caps and L10 is strictly hardest', () => {
     if (level.n >= 2) assert.equal(rates.WHIP_FIRST, 0, 'whip-first L' + level.n);
     console.log('L' + level.n, JSON.stringify(rates));
   }
-  assert.equal(rows[6].RAND, 1.3);
+  assert.equal(rows[6].RAND, 1.65);
   assert.equal(rows[6].GREEDY, 0);
   assert.equal(rows[6].GREEDY2, 0);
+  assert.equal(rows[6].WHIP_FIRST, 0);
+  assert.equal(rows[6].GREEDY_WHIPLATE, 0);
+  assert.equal(rows[6].GREEDY_BRIEF, 0);
+  assert.equal(rows[6].GREEDY2_BRIEF, 0);
   assert.equal(rows[9].RAND, 0.05);
   assert.equal(rows[9].GREEDY2, 0.09);
   assert.ok(rows.slice(0, 9).every((rates) => rates.RAND > rows[9].RAND));

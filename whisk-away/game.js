@@ -37,6 +37,7 @@
     var solveToken = 0;
   var solverMs = 0;
   var quietUntil = 0;
+  var blockUntilLift = false;
   var lastGesture = null;
   var winShown = false;
   var failShown = false;
@@ -174,6 +175,10 @@
   }
 
   function quiet() { quietUntil = now() + 350; }
+
+  function inputBlocked() {
+    return blockUntilLift || now() < quietUntil;
+  }
 
   function hideAll() {
     ['menu-panel', 'help', 'win', 'stuck', 'fail'].forEach(function (id) {
@@ -460,6 +465,7 @@
     drawCloths();
     drawDishes();
     drawTassels();
+    drawGrabs();
     drawLane();
     drawCaption();
     if (!drag && !anim && state.n <= 4 && state.used === 0 && !overlayOpen()) drawCoach();
@@ -810,6 +816,118 @@
     return { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y - thick + 2, w: long, h: thick };
   }
 
+  var grabCache = null;
+
+  function boxesOverlap(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  function grabRoom() {
+    return { left: 4, top: geom.hud + 4, right: cssW - 4, bottom: cssH - geom.bar - 4 };
+  }
+
+  function boxOnCanvas(box) {
+    var room = grabRoom();
+    return box.x >= room.left && box.y >= room.top && box.x + box.w <= room.right && box.y + box.h <= room.bottom;
+  }
+
+  function placeGrabs(board) {
+    var level = state.level;
+    var size = 44;
+    var boxes = new Array(level.cloths.length);
+    var reserved = [];
+    function blocked(i, box, external) {
+      if (!boxOnCanvas(box)) return true;
+      for (var k = 0; k < level.cloths.length; k++) {
+        if (k === i || !TL.on(board, k)) continue;
+        if (!external && k < i) continue;
+        if (boxesOverlap(box, clothScreen(k, board, null))) return true;
+        if (external && boxesOverlap(box, tasselBox(k, board, null))) return true;
+      }
+      if (external) {
+        for (var r = 0; r < reserved.length; r++) if (boxesOverlap(box, reserved[r])) return true;
+      }
+      return false;
+    }
+    for (var i = level.cloths.length - 1; i >= 0; i--) {
+      boxes[i] = null;
+      if (!TL.on(board, i)) continue;
+      var cloth = clothScreen(i, board, null);
+      var found = null;
+      var step = 4;
+      for (var y = cloth.y; y + size <= cloth.y + cloth.h && !found; y += step) {
+        for (var x = cloth.x; x + size <= cloth.x + cloth.w; x += step) {
+          var inside = { x: x, y: y, w: size, h: size, drawn: false };
+          if (!blocked(i, inside, false)) { found = inside; break; }
+        }
+      }
+      if (!found) {
+        var dirName = level.cloths[i][4];
+        var v = TL.DIR[dirName];
+        var lx = v[0] > 0 ? cloth.x + cloth.w : v[0] < 0 ? cloth.x : cloth.x + cloth.w / 2;
+        var ly = v[1] > 0 ? cloth.y + cloth.h : v[1] < 0 ? cloth.y : cloth.y + cloth.h / 2;
+        var perpX = -v[1];
+        var perpY = v[0];
+        for (var along = 0; along <= cssH && !found; along += 8) {
+          for (var side = 0; side <= cssW && !found; side += 8) {
+            var signs = side === 0 ? [0] : [-1, 1];
+            for (var s = 0; s < signs.length; s++) {
+              var px = lx + v[0] * (along + size / 2) + perpX * side * signs[s] - size / 2;
+              var py = ly + v[1] * (along + size / 2) + perpY * side * signs[s] - size / 2;
+              var outside = { x: px, y: py, w: size, h: size, drawn: true };
+              if (!blocked(i, outside, true)) { found = outside; break; }
+            }
+          }
+        }
+      }
+      boxes[i] = found;
+      if (found && found.drawn) reserved.push(found);
+    }
+    return boxes;
+  }
+
+  function grabsFor() {
+    if (!state || !geom) return [];
+    var key = TL.keyOf(state.board) + '|' + geom.cell + '|' + cssW + '|' + cssH;
+    if (grabCache && grabCache.key === key) return grabCache.boxes;
+    var boxes = placeGrabs(state.board);
+    grabCache = { key: key, boxes: boxes };
+    return boxes;
+  }
+
+  function drawGrabs() {
+    var grabs = grabsFor();
+    for (var i = 0; i < grabs.length; i++) {
+      var box = grabs[i];
+      if (!box || !box.drawn) continue;
+      var style = CLOTH[i % CLOTH.length];
+      var dir = state.level.cloths[i][4];
+      var v = TL.DIR[dir];
+      ctx.save();
+      ctx.fillStyle = 'rgba(42,22,14,.28)';
+      round(box.x + 2, box.y + 3, box.w, box.h, 12);
+      ctx.fill();
+      ctx.fillStyle = style.fill;
+      ctx.strokeStyle = '#F6E7C1';
+      ctx.lineWidth = 3;
+      round(box.x, box.y, box.w, box.h, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = style.ink;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      var cx = box.x + box.w / 2;
+      var cy = box.y + box.h / 2;
+      ctx.moveTo(cx - v[0] * 8 + v[1] * 7, cy - v[1] * 8 - v[0] * 7);
+      ctx.lineTo(cx + v[0] * 8, cy + v[1] * 8);
+      ctx.lineTo(cx - v[0] * 8 - v[1] * 7, cy - v[1] * 8 + v[0] * 7);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function drawLane() {
     if (!laneFlash || now() > laneFlash.until) return;
     ctx.fillStyle = 'rgba(224,82,74,.35)';
@@ -901,12 +1019,10 @@
   function hitBody(x, y) {
     var level = state.level;
     var board = state.board;
-    var gx = Math.floor((x - geom.x0) / geom.cell);
-    var gy = Math.floor((y - geom.y0) / geom.cell);
-    if (gx < 0 || gy < 0 || gx >= level.W || gy >= level.H) return -1;
     for (var c = level.cloths.length - 1; c >= 0; c--) {
       if (!TL.on(board, c)) continue;
-      if (TL.covers(TL.rectAt(level, board, c, [0, 0, 0, 0]), gx, gy)) return c;
+      var box = clothScreen(c, board, null);
+      if (x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h) return c;
     }
     return -1;
   }
@@ -945,6 +1061,11 @@
   function hitCloth(x, y) {
     var body = hitBody(x, y);
     if (body >= 0) return body;
+    var grabs = grabsFor();
+    for (var i = grabs.length - 1; i >= 0; i--) {
+      var grab = grabs[i];
+      if (grab && grab.drawn && x >= grab.x && y >= grab.y && x < grab.x + grab.w && y < grab.y + grab.h) return i;
+    }
     var tab = hitTassel(x, y);
     if (tab >= 0) return tab;
     var gx = Math.floor((x - geom.x0) / geom.cell);
@@ -970,18 +1091,32 @@
     if (target.samples.length > 64) target.samples.splice(0, target.samples.length - 64);
   }
 
+  var lastWindow = { dt: 0, along: 0 };
+
   function releaseSpeed(samples, dir) {
+    lastWindow = { dt: 0, along: 0 };
     if (!samples || samples.length < 2) return 0;
+    var origin = samples[0];
+    var moveAt = -1;
+    for (var i = 1; i < samples.length; i++) {
+      if (Math.hypot(samples[i].x - origin.x, samples[i].y - origin.y) >= 6) {
+        moveAt = i;
+        break;
+      }
+    }
+    if (moveAt < 0) return 0;
+    var v = TL.DIR[dir];
     var b = samples[samples.length - 1];
-    var chosen = samples[samples.length - 2];
-    for (var i = samples.length - 2; i >= 0; i--) {
-      if (b.t - samples[i].t > 100) break;
-      chosen = samples[i];
+    var chosen = samples[moveAt];
+    for (var j = samples.length - 2; j >= moveAt; j--) {
+      if (b.t - samples[j].t > 60) break;
+      chosen = samples[j];
     }
     var dt = b.t - chosen.t;
     if (dt < 1) dt = 1;
-    var v = TL.DIR[dir];
-    return ((b.x - chosen.x) * v[0] + (b.y - chosen.y) * v[1]) / dt;
+    var along = (b.x - chosen.x) * v[0] + (b.y - chosen.y) * v[1];
+    lastWindow = { dt: dt, along: along };
+    return along / dt;
   }
 
   function frame(t) {
@@ -994,10 +1129,27 @@
     requestAnimationFrame(frame);
   }
 
+  window.addEventListener('pointerdown', function (event) {
+    var onButton = event.target && event.target.closest && event.target.closest('button');
+    if (overlayOpen() || onButton || inputBlocked()) blockUntilLift = true;
+  }, true);
+
+  window.addEventListener('pointerup', function () {
+    if (!blockUntilLift) return;
+    blockUntilLift = false;
+    quietUntil = now() + 350;
+  }, true);
+
+  window.addEventListener('pointercancel', function () {
+    if (!blockUntilLift) return;
+    blockUntilLift = false;
+    quietUntil = now() + 350;
+  }, true);
+
   canvas.addEventListener('pointerdown', function (event) {
     if (event.button !== undefined && event.button !== 0) return;
     ensureAudio();
-    if (overlayOpen() || landscapeLocked() || !geom || settled || now() < quietUntil) return;
+    if (overlayOpen() || landscapeLocked() || !geom || settled || inputBlocked()) return;
     var p = localPoint(event);
     var hit = hitCloth(p.x, p.y);
     if (hit < 0) {
@@ -1054,7 +1206,7 @@
     }
     lastTap = null;
     var speed = releaseSpeed(d.samples, dirName);
-    lastGesture = { speed: speed, dt: dt, along: along, samples: d.samples.length };
+    lastGesture = { speed: speed, dt: dt, along: along, samples: d.samples.length, windowDt: lastWindow.dt, windowAlong: lastWindow.along };
     if (dt <= 250 && speed >= 1 && along > 8) {
       playChain(d.cloth, 0, true);
       return;
@@ -1201,40 +1353,34 @@
       var rect = canvas.getBoundingClientRect();
       return hitCloth(x - rect.left, y - rect.top);
     },
+    gridPoint: function (gx, gy) {
+      var local = cellOrigin(gx + 0.5, gy + 0.5);
+      var client = clientOf(local.x, local.y);
+      return { x: client.x, y: client.y, hit: hitCloth(local.x, local.y) };
+    },
+    targetBox: function (index) {
+      var grabs = grabsFor();
+      return grabs[index] || null;
+    },
     point: function (index) {
       var level = state.level;
-      var board = state.board;
-      var rect = TL.rectAt(level, board, index, [0, 0, 0, 0]);
-      var found = null;
-      for (var y = rect[1]; y < rect[1] + rect[3] && !found; y++) {
-        for (var x = rect[0]; x < rect[0] + rect[2]; x++) {
-          if (x < 0 || y < 0 || x >= level.W || y >= level.H) continue;
-          var covered = false;
-          for (var k = index + 1; k < level.cloths.length; k++) {
-            if (TL.on(board, k) && TL.covers(TL.rectAt(level, board, k, [0, 0, 0, 0]), x, y)) { covered = true; break; }
-          }
-          if (covered) continue;
-          var localTry = cellOrigin(x + 0.5, y + 0.5);
-          if (hitTassel(localTry.x, localTry.y) !== index && hitTassel(localTry.x, localTry.y) >= 0) continue;
-          found = [x, y];
-          break;
-        }
-      }
-      var dirName = level.cloths[index][4];
-      var dir = TL.DIR[dirName];
-      var local = found ? cellOrigin(found[0] + 0.5, found[1] + 0.5) : null;
+      var dir = TL.DIR[level.cloths[index][4]];
+      var grab = grabsFor()[index];
+      var local = null;
+      if (grab) local = { x: grab.x + grab.w / 2, y: grab.y + grab.h / 2 };
       if (!local || hitCloth(local.x, local.y) !== index) {
+        var cloth = clothScreen(index, state.board, null);
         local = null;
-        for (var dist = 1; dist <= 4 && !local; dist++) {
-          var gx = dirName === 'E' ? rect[0] + rect[2] - 1 + dist : dirName === 'W' ? rect[0] - dist : rect[0];
-          var gy = dirName === 'S' ? rect[1] + rect[3] - 1 + dist : dirName === 'N' ? rect[1] - dist : rect[1];
-          var tryLocal = cellOrigin(gx + 0.5, gy + 0.5);
-          if (hitCloth(tryLocal.x, tryLocal.y) === index) local = tryLocal;
+        var step = 6;
+        for (var y = cloth.y + 3; y < cloth.y + cloth.h - 3 && !local; y += step) {
+          for (var x = cloth.x + 3; x < cloth.x + cloth.w - 3; x += step) {
+            if (hitCloth(x, y) === index) { local = { x: x, y: y }; break; }
+          }
         }
       }
-      if (!local) local = cellOrigin(rect[0] + 0.5, rect[1] + 0.5);
+      if (!local) local = { x: geom.x0 + geom.cell / 2, y: geom.y0 + geom.cell / 2 };
       var client = clientOf(local.x, local.y);
-      return { x: client.x, y: client.y, dir: dir, cell: geom.cell, gx: found ? found[0] : -1, gy: found ? found[1] : -1 };
+      return { x: client.x, y: client.y, dir: dir, cell: geom.cell };
     }
   };
 })();

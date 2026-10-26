@@ -1,0 +1,890 @@
+{
+ "version": "v1.2",
+ "rule": "WA-002: whip gesture = pure whip (no snapped pulls). Sim moves already atomic.",
+ "budget": "par+2",
+ "levels": [
+  {
+   "level": 1,
+   "source_seed": "hand",
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     1,
+     2,
+     3,
+     2,
+     "E"
+    ]
+   ],
+   "dishes": [
+    [
+     2,
+     3
+    ]
+   ],
+   "targets": [
+    [
+     2,
+     3
+    ]
+   ],
+   "par": 1,
+   "budget": 3,
+   "reachable_states": 6,
+   "optimal_lines": 1,
+   "openings": 2,
+   "par_openings": 1,
+   "fatal_openings": 1,
+   "lazy_pct": {
+    "RAND": 50.0,
+    "GREEDY": 100.0,
+    "GREEDY2": 100.0,
+    "WHIP_FIRST": 100.0,
+    "GREEDY_WHIPLATE": 100.0,
+    "GREEDY_BRIEF": 100.0,
+    "GREEDY2_BRIEF": 100.0
+   },
+   "lazy_max": 100.0,
+   "visible_cells_per_cloth": [
+    6
+   ],
+   "no_lane": [
+    1,
+    100.0
+   ],
+   "no_carry": [
+    1,
+    100.0
+   ],
+   "reference_line": [
+    "whip c0"
+   ],
+   "winnable_state_pct": 33.33,
+   "lazy_max_policy": "GREEDY",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": true
+  },
+  {
+   "level": 2,
+   "source_seed": "hand",
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     0,
+     1,
+     3,
+     3,
+     "S"
+    ]
+   ],
+   "dishes": [
+    [
+     1,
+     1
+    ]
+   ],
+   "targets": [
+    [
+     1,
+     3
+    ]
+   ],
+   "par": 3,
+   "budget": 5,
+   "reachable_states": 10,
+   "optimal_lines": 1,
+   "openings": 2,
+   "par_openings": 1,
+   "fatal_openings": 1,
+   "lazy_pct": {
+    "RAND": 12.5,
+    "GREEDY": 100.0,
+    "GREEDY2": 100.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 100.0,
+    "GREEDY_BRIEF": 25.0,
+    "GREEDY2_BRIEF": 100.0
+   },
+   "lazy_max": 100.0,
+   "visible_cells_per_cloth": [
+    9
+   ],
+   "no_lane": [
+    3,
+    100.0
+   ],
+   "no_carry": [
+    3,
+    100.0
+   ],
+   "reference_line": [
+    "drag c0",
+    "drag c0",
+    "whip c0"
+   ],
+   "winnable_state_pct": 40.0,
+   "lazy_max_policy": "GREEDY",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 3,
+   "source_seed": "hand",
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     0,
+     0,
+     3,
+     4,
+     "S"
+    ],
+    [
+     0,
+     0,
+     2,
+     2,
+     "E"
+    ]
+   ],
+   "dishes": [
+    [
+     0,
+     0
+    ],
+    [
+     2,
+     2
+    ]
+   ],
+   "targets": [
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     4
+    ]
+   ],
+   "par": 5,
+   "budget": 7,
+   "reachable_states": 164,
+   "optimal_lines": 10,
+   "openings": 4,
+   "par_openings": 2,
+   "fatal_openings": 2,
+   "lazy_pct": {
+    "RAND": 3.1,
+    "GREEDY": 100.0,
+    "GREEDY2": 100.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 100.0,
+    "GREEDY_BRIEF": 50.0,
+    "GREEDY2_BRIEF": 55.6
+   },
+   "lazy_max": 100.0,
+   "visible_cells_per_cloth": [
+    8,
+    4
+   ],
+   "no_lane": [
+    5,
+    100.0
+   ],
+   "no_carry": [
+    5,
+    0.8
+   ],
+   "reference_line": [
+    "drag c0",
+    "drag c0",
+    "whip c0",
+    "drag c1",
+    "whip c1"
+   ],
+   "winnable_state_pct": 10.37,
+   "lazy_max_policy": "GREEDY",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 4,
+   "source_seed": 413,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     2,
+     2,
+     3,
+     3,
+     "W"
+    ],
+    [
+     2,
+     3,
+     3,
+     2,
+     "N"
+    ],
+    [
+     0,
+     3,
+     3,
+     2,
+     "W"
+    ]
+   ],
+   "dishes": [
+    [
+     2,
+     4
+    ],
+    [
+     0,
+     4
+    ]
+   ],
+   "targets": [
+    [
+     2,
+     2
+    ],
+    [
+     0,
+     3
+    ]
+   ],
+   "par": 5,
+   "budget": 7,
+   "reachable_states": 212,
+   "optimal_lines": 2,
+   "openings": 4,
+   "par_openings": 2,
+   "fatal_openings": 2,
+   "lazy_pct": {
+    "RAND": 1.2,
+    "GREEDY": 16.7,
+    "GREEDY2": 50.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 8.3,
+    "GREEDY2_BRIEF": 33.3
+   },
+   "lazy_max": 50.0,
+   "visible_cells_per_cloth": [
+    3,
+    4,
+    6
+   ],
+   "no_lane": [
+    5,
+    100.0
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "whip c0",
+    "drag c1",
+    "whip c2",
+    "drag c1",
+    "whip c1"
+   ],
+   "winnable_state_pct": 3.3,
+   "lazy_max_policy": "GREEDY2",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 5,
+   "source_seed": 324,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     1,
+     0,
+     4,
+     4,
+     "W"
+    ],
+    [
+     0,
+     2,
+     3,
+     2,
+     "S"
+    ],
+    [
+     2,
+     1,
+     2,
+     3,
+     "W"
+    ]
+   ],
+   "dishes": [
+    [
+     3,
+     0
+    ],
+    [
+     1,
+     1
+    ]
+   ],
+   "targets": [
+    [
+     2,
+     0
+    ],
+    [
+     0,
+     1
+    ]
+   ],
+   "par": 5,
+   "budget": 7,
+   "reachable_states": 602,
+   "optimal_lines": 20,
+   "openings": 4,
+   "par_openings": 2,
+   "fatal_openings": 2,
+   "lazy_pct": {
+    "RAND": 20.2,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "lazy_max": 20.2,
+   "visible_cells_per_cloth": [
+    8,
+    4,
+    6
+   ],
+   "no_lane": [
+    4,
+    100.0
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "drag c0",
+    "whip c0",
+    "drag c1",
+    "whip c1",
+    "whip c2"
+   ],
+   "winnable_state_pct": 80.9,
+   "lazy_max_policy": "RAND",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 6,
+   "source_seed": 540,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     1,
+     2,
+     4,
+     4,
+     "E"
+    ],
+    [
+     0,
+     3,
+     4,
+     2,
+     "E"
+    ],
+    [
+     1,
+     3,
+     4,
+     2,
+     "E"
+    ],
+    [
+     2,
+     1,
+     2,
+     3,
+     "S"
+    ]
+   ],
+   "dishes": [
+    [
+     2,
+     5
+    ],
+    [
+     1,
+     2
+    ]
+   ],
+   "targets": [
+    [
+     3,
+     5
+    ],
+    [
+     2,
+     2
+    ]
+   ],
+   "par": 6,
+   "budget": 8,
+   "reachable_states": 6488,
+   "optimal_lines": 690,
+   "openings": 7,
+   "par_openings": 5,
+   "fatal_openings": 1,
+   "lazy_pct": {
+    "RAND": 15.8,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "lazy_max": 15.8,
+   "visible_cells_per_cloth": [
+    6,
+    2,
+    6,
+    6
+   ],
+   "no_lane": [
+    5,
+    100.0
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "drag c0",
+    "whip c0",
+    "whip c1",
+    "drag c2",
+    "whip c2",
+    "whip c3"
+   ],
+   "winnable_state_pct": 53.73,
+   "lazy_max_policy": "RAND",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 7,
+   "source_seed": 112345,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     0,
+     2,
+     3,
+     2,
+     "N"
+    ],
+    [
+     1,
+     4,
+     3,
+     2,
+     "N"
+    ],
+    [
+     1,
+     2,
+     4,
+     3,
+     "S"
+    ],
+    [
+     0,
+     0,
+     2,
+     2,
+     "W"
+    ]
+   ],
+   "dishes": [
+    [
+     0,
+     1
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     4,
+     4
+    ]
+   ],
+   "targets": [
+    [
+     0,
+     3
+    ],
+    [
+     4,
+     4
+    ],
+    [
+     4,
+     5
+    ]
+   ],
+   "par": 7,
+   "budget": 9,
+   "reachable_states": 7263,
+   "optimal_lines": 140,
+   "clean_optimal_lines": 87,
+   "visible_cells_per_cloth": [
+    2,
+    3,
+    12,
+    4
+   ],
+   "no_lane": [
+    7,
+    1.6
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "whip c0",
+    "drag c1",
+    "whip c1",
+    "drag c2",
+    "drag c2",
+    "whip c2",
+    "whip c3"
+   ],
+   "openings": 7,
+   "par_openings": 4,
+   "fatal_openings": 2,
+   "winnable_state_pct": 16.04,
+   "lazy_pct": {
+    "RAND": 1.6,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false,
+   "lazy_max": 1.6,
+   "lazy_max_policy": "RAND"
+  },
+  {
+   "level": 8,
+   "source_seed": 502,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     3,
+     1,
+     2,
+     4,
+     "N"
+    ],
+    [
+     1,
+     0,
+     2,
+     3,
+     "S"
+    ],
+    [
+     0,
+     2,
+     2,
+     3,
+     "N"
+    ],
+    [
+     0,
+     0,
+     2,
+     4,
+     "E"
+    ]
+   ],
+   "dishes": [
+    [
+     3,
+     2
+    ],
+    [
+     3,
+     1
+    ]
+   ],
+   "targets": [
+    [
+     3,
+     1
+    ],
+    [
+     3,
+     0
+    ]
+   ],
+   "par": 7,
+   "budget": 9,
+   "reachable_states": 19356,
+   "optimal_lines": 182,
+   "openings": 7,
+   "par_openings": 3,
+   "fatal_openings": 1,
+   "lazy_pct": {
+    "RAND": 5.5,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "lazy_max": 5.5,
+   "visible_cells_per_cloth": [
+    8,
+    3,
+    2,
+    8
+   ],
+   "no_lane": [
+    5,
+    100.0
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "drag c0",
+    "whip c0",
+    "drag c1",
+    "drag c1",
+    "whip c1",
+    "whip c2",
+    "whip c3"
+   ],
+   "winnable_state_pct": 75.91,
+   "lazy_max_policy": "RAND",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 9,
+   "source_seed": 2287,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     0,
+     0,
+     4,
+     2,
+     "E"
+    ],
+    [
+     0,
+     2,
+     3,
+     3,
+     "W"
+    ],
+    [
+     3,
+     3,
+     2,
+     2,
+     "S"
+    ],
+    [
+     2,
+     2,
+     2,
+     3,
+     "W"
+    ]
+   ],
+   "dishes": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     3
+    ],
+    [
+     0,
+     1
+    ]
+   ],
+   "targets": [
+    [
+     2,
+     1
+    ],
+    [
+     0,
+     3
+    ],
+    [
+     1,
+     1
+    ]
+   ],
+   "par": 8,
+   "budget": 10,
+   "reachable_states": 1344,
+   "optimal_lines": 672,
+   "openings": 6,
+   "par_openings": 2,
+   "fatal_openings": 4,
+   "lazy_pct": {
+    "RAND": 0.8,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.0,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "lazy_max": 0.8,
+   "visible_cells_per_cloth": [
+    8,
+    6,
+    2,
+    6
+   ],
+   "no_lane": [
+    6,
+    100.0
+   ],
+   "no_carry": null,
+   "reference_line": [
+    "drag c0",
+    "whip c0",
+    "drag c2",
+    "drag c2",
+    "drag c1",
+    "whip c1",
+    "whip c2",
+    "whip c3"
+   ],
+   "winnable_state_pct": 22.99,
+   "lazy_max_policy": "RAND",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  },
+  {
+   "level": 10,
+   "source_seed": 121131,
+   "W": 5,
+   "H": 6,
+   "cloths": [
+    [
+     0,
+     2,
+     4,
+     4,
+     "N"
+    ],
+    [
+     1,
+     2,
+     2,
+     4,
+     "S"
+    ],
+    [
+     1,
+     1,
+     4,
+     2,
+     "N"
+    ]
+   ],
+   "dishes": [
+    [
+     3,
+     1
+    ],
+    [
+     0,
+     5
+    ]
+   ],
+   "targets": [
+    [
+     3,
+     0
+    ],
+    [
+     0,
+     1
+    ]
+   ],
+   "par": 10,
+   "budget": 12,
+   "reachable_states": 1308,
+   "optimal_lines": 293,
+   "visible_cells_per_cloth": [
+    7,
+    6,
+    8
+   ],
+   "no_lane": [
+    10,
+    0.1
+   ],
+   "no_carry": [
+    7,
+    100.0
+   ],
+   "reference_line": [
+    "drag c0",
+    "drag c1",
+    "drag c0",
+    "drag c1",
+    "drag c0",
+    "drag c1",
+    "drag c0",
+    "whip c0",
+    "whip c1",
+    "whip c2"
+   ],
+   "openings": 6,
+   "par_openings": 2,
+   "fatal_openings": 3,
+   "winnable_state_pct": 24.16,
+   "lazy_pct": {
+    "RAND": 0.0,
+    "GREEDY": 0.0,
+    "GREEDY2": 0.1,
+    "WHIP_FIRST": 0.0,
+    "GREEDY_WHIPLATE": 0.0,
+    "GREEDY_BRIEF": 0.0,
+    "GREEDY2_BRIEF": 0.0
+   },
+   "lazy_max": 0.1,
+   "lazy_max_policy": "GREEDY2",
+   "solvable_pulls_only": false,
+   "solvable_whips_only": false
+  }
+ ],
+ "change": "WA-011: L7 replaced by seed 112345; reference line never acts on an off-table or fully covered cloth."
+}
