@@ -50,24 +50,23 @@ async function trustedStroke(page, session, from, dir, dist, pxPerMs, pauseMs) {
   await settle(page);
 }
 
-export async function flick(page, session, index, cells, pxPerMs, pauseMs) {
-  const spot = await page.evaluate((cloth) => window.__whisk.point(cloth), index);
+export async function strokeAt(page, session, spot, cells, pxPerMs, pauseMs) {
   await trustedStroke(
     page, session, spot, spot.dir,
     (cells == null ? 0.7 : cells) * spot.cell,
     pxPerMs == null ? 1.6 : pxPerMs,
-    pauseMs == null ? 55 : pauseMs
+    pauseMs == null ? 0 : pauseMs
   );
+}
+
+export async function flick(page, session, index, cells, pxPerMs, pauseMs) {
+  const spot = await page.evaluate((cloth) => window.__whisk.point(cloth), index);
+  await strokeAt(page, session, spot, cells == null ? 0.7 : cells, pxPerMs == null ? 1.6 : pxPerMs, pauseMs == null ? 55 : pauseMs);
 }
 
 export async function pull(page, session, index, cells, pxPerMs, pauseMs) {
   const spot = await page.evaluate((cloth) => window.__whisk.point(cloth), index);
-  await trustedStroke(
-    page, session, spot, spot.dir,
-    (cells == null ? 0.78 : cells) * spot.cell,
-    pxPerMs == null ? 0.22 : pxPerMs,
-    pauseMs == null ? 0 : pauseMs
-  );
+  await strokeAt(page, session, spot, cells == null ? 0.78 : cells, pxPerMs == null ? 0.22 : pxPerMs, pauseMs == null ? 0 : pauseMs);
 }
 
 export async function assertTarget(page, index, where) {

@@ -38,6 +38,8 @@
   var solverMs = 0;
   var quietUntil = 0;
   var blockUntilLift = false;
+  var guardRect = null;
+  var guardUntil = 0;
   var lastGesture = null;
   var winShown = false;
   var failShown = false;
@@ -131,33 +133,34 @@
     applause = 0;
     cleanStamp = 0;
     hideAll();
-    document.getElementById('loading').classList.remove('hidden');
     syncChrome();
     layoutGeom();
     paint();
     quiet();
     ensureAudio();
+    document.getElementById('loading').classList.add('hidden');
     if (level._graph) {
       solverReady = true;
       solverMs = 0;
-      document.getElementById('loading').classList.add('hidden');
       return;
     }
-    var heavy = level.expectStates > 15000;
-    if (!heavy) {
+    // L8–L10: paint the table first, then search. A synchronous search
+    // (or the first slice of one) was keeping the board hidden.
+    var late = level.n >= 8;
+    if (!late) {
       var started = now();
       TL.graph(level);
       solverMs = now() - started;
       solverReady = true;
-      document.getElementById('loading').classList.add('hidden');
       return;
     }
-    document.getElementById('loading').classList.add('hidden');
-    var job = TL.beginGraph(level);
-    var clock = now();
+    solverReady = false;
     solverMs = 0;
+    var job = TL.beginGraph(level);
+    var clock = 0;
     var pumpSolver = function () {
       if (token !== solveToken) return;
+      if (!clock) clock = now();
       var slice = now();
       var done = TL.stepGraph(job, 8000);
       solverMs += now() - slice;
@@ -171,14 +174,15 @@
       syncChrome();
       paint();
     };
-    setTimeout(pumpSolver, 0);
+    var armSolver = function () {
+      if (token !== solveToken) return;
+      setTimeout(pumpSolver, 40);
+    };
+    if (document.readyState === 'complete') armSolver();
+    else window.addEventListener('load', armSolver, { once: true });
   }
 
   function quiet() { quietUntil = now() + 350; }
-
-  function inputBlocked() {
-    return blockUntilLift || now() < quietUntil;
-  }
 
   function hideAll() {
     ['menu-panel', 'help', 'win', 'stuck', 'fail'].forEach(function (id) {
@@ -805,15 +809,32 @@
     }
   }
 
+  function clampBox(box) {
+    var pad = 2;
+    var maxX = Math.max(pad, cssW - box.w - pad);
+    var maxY = Math.max(pad, cssH - box.h - pad);
+    return {
+      x: Math.min(maxX, Math.max(pad, box.x)),
+      y: Math.min(maxY, Math.max(pad, box.y)),
+      w: box.w,
+      h: box.h
+    };
+  }
+
   function tasselBox(i, board, extra) {
     var cloth = clothScreen(i, board, extra);
     var dir = state.level.cloths[i][4];
     var long = Math.max(22, geom.cell * 0.34);
     var thick = Math.max(14, geom.cell * 0.2);
-    if (dir === 'E') return { x: cloth.x + cloth.w - 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
-    if (dir === 'W') return { x: cloth.x - thick + 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
-    if (dir === 'S') return { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y + cloth.h - 2, w: long, h: thick };
-    return { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y - thick + 2, w: long, h: thick };
+    var box;
+    if (dir === 'E') box = { x: cloth.x + cloth.w - 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
+    else if (dir === 'W') box = { x: cloth.x - thick + 2, y: cloth.y + cloth.h / 2 - long / 2, w: thick, h: long };
+    else if (dir === 'S') box = { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y + cloth.h - 2, w: long, h: thick };
+    else box = { x: cloth.x + cloth.w / 2 - long / 2, y: cloth.y - thick + 2, w: long, h: thick };
+    var fitted = clampBox(box);
+    fitted.w = box.w;
+    fitted.h = box.h;
+    return fitted;
   }
 
   var grabCache = null;
@@ -1129,27 +1150,53 @@
     requestAnimationFrame(frame);
   }
 
+  function rememberGuard(rect) {
+    guardRect = rect;
+    guardUntil = now() + 350;
+  }
+
+  function inGuard(x, y) {
+    if (!guardRect || now() > guardUntil) return false;
+    return x >= guardRect.l && x <= guardRect.r && y >= guardRect.t && y <= guardRect.b;
+  }
+
+  function guardFromButton(button) {
+    var bounds = button.getBoundingClientRect();
+    return { l: bounds.left - 16, t: bounds.top - 16, r: bounds.right + 16, b: bounds.bottom + 16 };
+  }
+
   window.addEventListener('pointerdown', function (event) {
-    var onButton = event.target && event.target.closest && event.target.closest('button');
-    if (overlayOpen() || onButton || inputBlocked()) blockUntilLift = true;
+    var button = event.target && event.target.closest && event.target.closest('button');
+    if (button) {
+      guardRect = guardFromButton(button);
+      blockUntilLift = true;
+      return;
+    }
+    if (overlayOpen()) {
+      guardRect = { l: event.clientX - 28, t: event.clientY - 28, r: event.clientX + 28, b: event.clientY + 28 };
+      blockUntilLift = true;
+      return;
+    }
+    if (inGuard(event.clientX, event.clientY)) blockUntilLift = true;
   }, true);
 
   window.addEventListener('pointerup', function () {
     if (!blockUntilLift) return;
     blockUntilLift = false;
-    quietUntil = now() + 350;
+    rememberGuard(guardRect);
   }, true);
 
   window.addEventListener('pointercancel', function () {
     if (!blockUntilLift) return;
     blockUntilLift = false;
-    quietUntil = now() + 350;
+    rememberGuard(guardRect);
   }, true);
 
   canvas.addEventListener('pointerdown', function (event) {
     if (event.button !== undefined && event.button !== 0) return;
     ensureAudio();
-    if (overlayOpen() || landscapeLocked() || !geom || settled || inputBlocked()) return;
+    if (overlayOpen() || landscapeLocked() || !geom || settled || blockUntilLift) return;
+    if (inGuard(event.clientX, event.clientY)) return;
     var p = localPoint(event);
     var hit = hitCloth(p.x, p.y);
     if (hit < 0) {
@@ -1361,6 +1408,26 @@
     targetBox: function (index) {
       var grabs = grabsFor();
       return grabs[index] || null;
+    },
+    handles: function () {
+      var grabs = grabsFor();
+      var list = [];
+      for (var i = 0; i < state.level.cloths.length; i++) {
+        if (!TL.on(state.board, i)) continue;
+        var tassel = tasselBox(i, state.board, null);
+        var target = grabs[i];
+        var tx = tassel.x + tassel.w / 2;
+        var ty = tassel.y + tassel.h / 2;
+        list.push({
+          i: i,
+          tassel: tassel,
+          target: target,
+          body: hitBody(tx, ty),
+          tasselHit: hitCloth(tx, ty),
+          targetHit: target ? hitCloth(target.x + target.w / 2, target.y + target.h / 2) : -1
+        });
+      }
+      return { w: cssW, h: cssH, list: list };
     },
     point: function (index) {
       var level = state.level;
