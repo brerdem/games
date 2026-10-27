@@ -19,6 +19,7 @@ const GAMES = [
   'knock-on',
   'shish-lane',
   'whisk-away',
+  'fizz-tower',
 ];
 const PHONE = 390 / 844;
 

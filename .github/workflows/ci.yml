@@ -112,3 +112,15 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - name: Whisk Away logic and browser gate
         run: node --test --test-timeout=180000 whisk-away/tests/logic.test.mjs whisk-away/tests/browser.test.mjs whisk-away/tests/browser-reference.test.mjs whisk-away/tests/browser-handles.test.mjs whisk-away/tests/browser-offspot.test.mjs whisk-away/tests/browser-load.test.mjs whisk-away/tests/misfire-320.test.mjs whisk-away/tests/misfire-360.test.mjs whisk-away/tests/misfire-390.test.mjs whisk-away/tests/misfire-430.test.mjs
+
+  fizz-tower:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install chromium --with-deps
+      - name: Fizz Tower logic and browser gate
+        run: node --test --test-timeout=180000 fizz-tower/tests/logic.test.mjs fizz-tower/tests/browser.test.mjs fizz-tower/tests/browser-perf.test.mjs

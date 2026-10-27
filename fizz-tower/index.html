@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#2B1B3D" />
+<title>Fizz Tower</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232B1B3D'/%3E%3Cpath d='M6 2h4l-.6 3h.8a3 3 0 0 1 0 6H5.8a3 3 0 0 1 0-6h.8z' fill='%23E8344E'/%3E%3C/svg%3E" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #1A1024; overflow: hidden; }
+  body {
+    min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Palatino, "Iowan Old Style", Georgia, "Times New Roman", serif;
+    color: #F7F3EA;
+    overscroll-behavior: none;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * 390 / 844));
+    height: min(100dvh, calc(100vw * 844 / 390));
+    max-height: 100dvh;
+    background: #2B1B3D;
+    overflow: hidden;
+  }
+  @media (max-width: 520px), (max-height: 520px) {
+    #stage { width: 100vw; height: 100dvh; max-height: none; }
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; z-index: 1; }
+  button {
+    font-family: inherit; color: #2B1B3D; background: #E7C36A;
+    border: 0; border-radius: 999px; min-height: 48px; min-width: 48px;
+    padding: 0 14px; font-size: 16px; font-weight: 700; cursor: pointer;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: #E8344E; color: #FFF8F4; }
+  button.hidden { display: none; }
+  #hud, #bar {
+    position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; z-index: 2; pointer-events: none;
+  }
+  #hud { top: 0; min-height: 64px; align-items: flex-start; }
+  #bar { bottom: 0; min-height: 72px; justify-content: space-between; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  #hud button, #bar button { pointer-events: auto; }
+  #titles { flex: 1; min-width: 0; }
+  #kicker { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #E7C36A; }
+  #name { font-size: 26px; line-height: 1; color: #F7F3EA; }
+  #pours { margin-top: 4px; font-size: 13px; letter-spacing: .04em; color: #F7F3EA; }
+  .pips { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .pip { width: 10px; height: 14px; border-radius: 6px; background: #E7C36A; }
+  .pip.spent { background: transparent; border: 1px dashed rgba(231,195,106,.7); }
+  #mute { width: 56px; padding: 0; background: #F7F3EA; }
+  .overlay {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    background: rgba(26, 16, 36, .62); padding: 16px;
+  }
+  .overlay.hidden { display: none; }
+  .card {
+    width: min(340px, 100%); background: #F7F3EA; color: #2B1B3D; border-radius: 22px;
+    padding: 18px; box-shadow: 0 18px 40px rgba(26,16,36,.4);
+  }
+  .card h2 { margin: 0 0 8px; font-size: 32px; line-height: 1; }
+  .card p { margin: 0 0 12px; line-height: 1.35; }
+  .card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stars { letter-spacing: .16em; color: #A56B12; font-size: 22px; }
+  @media (max-height: 700px) {
+    #name { font-size: 22px; }
+    #hud { min-height: 52px; padding-top: 6px; }
+    #bar { min-height: 56px; }
+    button { min-height: 48px; font-size: 15px; }
+    .card h2 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <header id="hud">
+      <div id="titles">
+        <div id="kicker">Tower 1</div>
+        <div id="name">First Pour</div>
+        <div id="pours">Pours 0/5</div>
+        <div class="pips" id="pips"></div>
+      </div>
+      <button id="mute" type="button">Snd</button>
+    </header>
+    <footer id="bar">
+      <button id="undo" type="button">Undo −1</button>
+      <button id="restart" type="button">Restart</button>
+      <button id="menu" type="button">Menu</button>
+    </footer>
+    <div id="loading" class="overlay"><div class="card"><h2>Chilling the glasses</h2><p>The tower is being set.</p></div></div>
+    <div id="menu-panel" class="overlay hidden">
+      <div class="card">
+        <h2>Fizz Tower</h2>
+        <p>Tap a bottle. A full glass pushes its top layer out toward the side it leans.</p>
+        <div class="row">
+          <button id="path" type="button">Spill path off</button>
+          <button id="how" type="button">How to pour</button>
+          <button id="resume" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+    <div id="help" class="overlay hidden">
+      <div class="card">
+        <h2>How to pour</h2>
+        <p>The first pour ends up lowest. A brass coaster flips after every spill. A drip on the cloth still rocks the glass.</p>
+        <p>Undo spends one pour. Finish every glass on its dashed bands.</p>
+        <button id="help-close" type="button">Back</button>
+      </div>
+    </div>
+    <div id="win" class="overlay hidden">
+      <div class="card">
+        <h2>Cheers!</h2>
+        <p class="stars" id="win-stars"></p>
+        <p id="win-copy"></p>
+        <div class="row">
+          <button id="win-next" type="button" class="primary">Next</button>
+          <button id="win-retry" type="button">Restart</button>
+          <button id="win-menu" type="button">Menu</button>
+        </div>
+      </div>
+    </div>
+    <div id="stuck" class="overlay hidden">
+      <div class="card">
+        <h2 id="stuck-copy">This tower can't be finished in 0 pours</h2>
+        <div class="row">
+          <button id="stuck-undo" type="button" class="hidden">Undo −1</button>
+          <button id="stuck-restart" type="button" class="primary">Restart</button>
+        </div>
+      </div>
+    </div>
+    <div id="fail" class="overlay hidden">
+      <div class="card">
+        <h2>Out of pours</h2>
+        <p>The budget is gone and the tower is not finished.</p>
+        <div class="row">
+          <button id="fail-restart" type="button" class="primary">Restart</button>
+          <button id="fail-menu" type="button">Menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="pack.js"></script>
+  <script src="logic.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
