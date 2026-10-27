@@ -97,7 +97,9 @@ test('L1 reference taps win once at par', async () => {
       const spot = await page.evaluate(() => window.__fizz.boxes().bottles[0]);
       await tap(session, spot.cx, spot.cy);
       await settle(page);
+      await page.waitForFunction(() => window.__fizz.graceLeft() === 0);
     }
+    await page.waitForFunction(() => window.__fizz.snapshot().won, null, { timeout: 4000 });
     const snap = await page.evaluate(() => window.__fizz.snapshot());
     assert.equal(snap.won, true);
     assert.equal(snap.used, 3);
@@ -131,8 +133,9 @@ test('a rapid triple tap pours once, and taps after Next do not pour', async () 
     assert.equal(once.used, 1, 'stray pours ' + once.used);
     await page.evaluate(() => { window.__fizz.commit(0); });
     await settle(page);
+    await page.waitForFunction(() => window.__fizz.graceLeft() === 0);
     await page.evaluate(() => { window.__fizz.commit(0); });
-    await page.waitForFunction(() => window.__fizz.snapshot().won);
+    await page.waitForFunction(() => window.__fizz.snapshot().won, null, { timeout: 4000 });
     await sleep(200);
     const next = await page.locator('#win-next').boundingBox();
     await tap(session, next.x + next.width / 2, next.y + next.height / 2);
@@ -154,17 +157,212 @@ test('the stuck card matches the solver and offers undo only when it still wins'
   const browser = await launch();
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.goto(fileUrl + '?level=2');
+    await page.goto(fileUrl + '?level=7');
     await page.waitForFunction(() => window.__fizz.solverReady);
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => window.__fizz.commit(0));
-      await settle(page);
-    }
+    await page.evaluate(() => window.__fizz.instant(0));
+    await page.waitForFunction(() => window.__fizz.snapshot().stuck);
     const stuck = await page.evaluate(() => window.__fizz.snapshot());
     assert.equal(stuck.stuck, true);
     assert.equal(stuck.banner, "This tower can't be finished in " + stuck.left + (stuck.left === 1 ? ' pour' : ' pours'));
     assert.equal(stuck.failed, false);
     assert.equal(stuck.won, false);
+    assert.equal(stuck.undoOffered, true);
+    await page.click('#stuck-undo');
+    await sleep(50);
+    const undone = await page.evaluate(() => window.__fizz.snapshot());
+    assert.equal(undone.stuck, false);
+    assert.equal(undone.used, stuck.used + 1);
+    assert.equal(undone.level, 7);
+    assert.equal(undone.goal, false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('an invalid level query opens tower 1', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    const errors = [];
+    page.on('pageerror', (err) => errors.push(String(err)));
+    await page.goto(fileUrl + '?level=abc');
+    await page.waitForFunction(() => window.__fizz && window.__fizz.ready, null, { timeout: 4000 });
+    const snap = await page.evaluate(() => window.__fizz.snapshot());
+    assert.equal(snap.level, 1);
+    assert.equal(snap.title, 'First Pour');
+    assert.equal(errors.length, 0, errors.join('\n'));
+    await page.goto(fileUrl + '?level=99');
+    await page.waitForFunction(() => window.__fizz.ready);
+    assert.equal((await page.evaluate(() => window.__fizz.snapshot())).level, 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('bottles hang over their entry glass and do not overlap', async () => {
+  const browser = await launch();
+  try {
+    for (const level of [2, 3, 8, 10]) {
+      for (const [width, height] of [[320, 568], [360, 800], [390, 844], [430, 932]]) {
+        const page = await browser.newPage({ viewport: { width, height } });
+        await page.goto(fileUrl + '?level=' + level);
+        await page.waitForFunction(() => window.__fizz.ready);
+        const info = await page.evaluate(() => window.__fizz.boxes());
+        const bottles = info.bottles;
+        for (let i = 0; i < bottles.length; i++) {
+          assert.ok(bottles[i].w >= 64 && bottles[i].h >= 44, width + ' L' + level + ' size');
+          assert.ok(Math.abs((bottles[i].x + bottles[i].w / 2) - bottles[i].aim) < bottles[i].w, width + ' L' + level + ' aim');
+          for (let j = i + 1; j < bottles.length; j++) {
+            const overlap = bottles[i].x < bottles[j].x + bottles[j].w - 0.5
+              && bottles[j].x < bottles[i].x + bottles[i].w - 0.5
+              && bottles[i].y < bottles[j].y + bottles[j].h
+              && bottles[j].y < bottles[i].y + bottles[i].h;
+            assert.equal(overlap, false, width + ' L' + level + ' overlap ' + i + ' ' + j);
+          }
+        }
+        const cols = {};
+        bottles.forEach((box) => {
+          (cols[box.col] = cols[box.col] || []).push(box);
+        });
+        Object.keys(cols).forEach((col) => {
+          const group = cols[col];
+          for (let k = 1; k < group.length; k++) {
+            assert.ok(group[k].x > group[k - 1].x, 'order ' + level + ' col ' + col);
+          }
+          if (group.length === 2) {
+            const c0 = group[0].x + group[0].w / 2;
+            const c1 = group[1].x + group[1].w / 2;
+            assert.ok(Math.abs((group[0].aim - c0) - group[0].w / 2) < 1.5, width + ' L' + level + ' half left');
+            assert.ok(Math.abs((c1 - group[1].aim) - group[1].w / 2) < 1.5, width + ' L' + level + ' half right');
+          }
+        });
+        if (width <= 360) {
+          for (const box of bottles) assert.ok(box.art <= 0.75 && box.w >= 64, width + ' art ' + box.art);
+        }
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a drip stain stays until the pour that made it is undone', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=3');
+    await page.waitForFunction(() => window.__fizz.solverReady);
+    await page.evaluate(() => { window.__fizz.instant(0); window.__fizz.instant(0); window.__fizz.instant(0); });
+    const stained = await page.evaluate(() => window.__fizz.stains());
+    assert.ok(stained >= 1, 'stain ' + stained);
+    await page.evaluate(() => window.__fizz.undo());
+    assert.equal(await page.evaluate(() => window.__fizz.stains()), stained);
+    await page.evaluate(() => window.__fizz.undo());
+    assert.equal(await page.evaluate(() => window.__fizz.stains()), stained - 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('swallowed taps wiggle and do not pour, including just after a cascade', async () => {
+  const browser = await launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const session = await context.newCDPSession(page);
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__fizz.ready);
+    const spot = await page.evaluate(() => window.__fizz.boxes().bottles[0]);
+    await tap(session, spot.cx, spot.cy);
+    await page.waitForFunction(() => window.__fizz.animating());
+    await tap(session, spot.cx, spot.cy);
+    await tap(session, spot.cx, spot.cy);
+    const timed = await page.evaluate(({ x, y }) => {
+      return new Promise((resolve) => {
+        function watch() {
+          if (window.__fizz.animating()) { requestAnimationFrame(watch); return; }
+          const ended = window.__fizz.cascadeEnded();
+          const during = window.__fizz.wiggles();
+          const used = window.__fizz.snapshot().used;
+          function poke(ms) {
+            return new Promise((done) => {
+              const wait = Math.max(0, ms - (performance.now() - ended));
+              setTimeout(() => {
+                document.getElementById('c').dispatchEvent(new PointerEvent('pointerdown', {
+                  bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, pointerType: 'touch'
+                }));
+                done(performance.now() - ended);
+              }, wait);
+            });
+          }
+          poke(100).then((at100) => {
+            const after100 = { used: window.__fizz.snapshot().used, wiggles: window.__fizz.wiggles() };
+            poke(200).then((at200) => {
+              resolve({
+                ended, during, used, at100, after100, at200,
+                used200: window.__fizz.snapshot().used
+              });
+            });
+          });
+        }
+        requestAnimationFrame(watch);
+      });
+    }, { x: spot.cx, y: spot.cy });
+    assert.equal(timed.used, 1);
+    assert.ok(timed.during >= 2, 'wiggles during ' + timed.during);
+    assert.ok(timed.at100 >= 80 && timed.at100 < 150, '100ms tap landed at ' + timed.at100);
+    assert.equal(timed.after100.used, 1);
+    assert.ok(timed.after100.wiggles >= timed.during + 1, 'wiggle for the grace tap');
+    assert.ok(timed.at200 >= 180 && timed.at200 < 260, '200ms tap landed at ' + timed.at200);
+    assert.equal(timed.used200, 2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('cascades finish within 1.2s and the first push stays full speed', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=10');
+    await page.waitForFunction(() => window.__fizz.ready);
+    const plans = await page.evaluate(() => [1, 2, 3, 4, 5, 6].map((n) => window.__fizz.cascadePlan(n)));
+    for (const plan of plans) {
+      assert.ok(plan.total <= 1200, 'schedule ' + plan.total);
+      assert.ok(plan.full >= 270 && plan.full <= 290, 'first push ' + plan.full);
+      if (plan.mid) assert.ok(plan.mid <= plan.full + 0.01, 'middle ' + plan.mid);
+    }
+    assert.ok(plans[3].mid < plans[3].full, '4-event middles shorten');
+    assert.ok(plans[3].total <= 1200);
+    await page.waitForFunction(() => window.__fizz.solverReady, null, { timeout: 8000 });
+    const events = await page.evaluate(() => window.__fizz.armLongest());
+    assert.ok(events >= 4, 'longest ' + events);
+    await settle(page);
+    const measured = await page.evaluate(() => window.__fizz.lastCascadeMs());
+    assert.ok(measured <= 1200, 'measured ' + measured + ' for ' + events);
+    assert.ok(measured >= 600, 'measured too short ' + measured);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('landscape keeps the portrait frame and usable targets', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 844, height: 390 } });
+    await page.goto(fileUrl + '?level=8');
+    await page.waitForFunction(() => window.__fizz.ready);
+    const info = await page.evaluate(() => {
+      const stage = document.getElementById('stage').getBoundingClientRect();
+      return { w: stage.width, h: stage.height, bottles: window.__fizz.boxes().bottles };
+    });
+    assert.ok(info.w < info.h, 'portrait frame ' + info.w + 'x' + info.h);
+    assert.ok(Math.abs(info.w / info.h - 390 / 844) < 0.08, 'aspect ' + info.w / info.h);
+    assert.ok(info.w < 520, 'not full bleed ' + info.w);
+    for (const box of info.bottles) {
+      assert.ok(box.w >= 44 && box.h >= 44, 'target ' + box.w);
+    }
   } finally {
     await browser.close();
   }

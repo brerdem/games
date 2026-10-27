@@ -28,6 +28,22 @@
   var stuckShown = false;
   var blockUntilLift = false;
   var tapQuietUntil = 0;
+  var graceUntil = 0;
+  var wiggleCount = 0;
+  var wiggles = [];
+  var solveJob = null;
+  var solveT0 = 0;
+  var drain = null;
+  var winAt = 0;
+  var confetti = [];
+  var levelStarted = 0;
+  var lastCascadeMs = 0;
+  var cascadeEndedAt = 0;
+  var viewCont = [];
+  var viewTilt = [];
+  var sprites = {};
+  var towerLayer = null;
+  var prepared = null;
   var showPath = false;
   var backdrop = null;
   var reduced = false;
@@ -46,6 +62,7 @@
     canvas.height = Math.max(1, Math.round(cssH * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     backdrop = null;
+    towerLayer = null;
     layout();
     paint();
   }
@@ -54,44 +71,93 @@
     if (!level) return;
     var hud = document.getElementById('hud').offsetHeight || 64;
     var bar = document.getElementById('bar').offsetHeight || 72;
-    var count = level.bottles.length;
-    var gap = 8;
-    var margin = 10;
-    var inner = cssW - margin * 2;
-    var bw = Math.floor((inner - gap * (count - 1)) / count);
-    bw = Math.max(64, Math.min(96, bw));
-    var rowW = bw * count + gap * (count - 1);
-    if (rowW > inner) {
-      bw = Math.floor((inner - gap * (count - 1)) / count);
-      rowW = bw * count + gap * (count - 1);
-    }
-    var bh = Math.max(64, Math.min(92, Math.round(cssH * 0.11)));
-    var by = hud + 8;
-    var x0 = Math.round((cssW - rowW) / 2);
-    var bottles = [];
-    for (var i = 0; i < count; i++) {
-      bottles.push({ x: x0 + i * (bw + gap), y: by, w: bw, h: bh });
-    }
-    var rows = 0;
-    var cols = 0;
+    var glassRows = 0;
+    var glassCols = 0;
     level.glasses.forEach(function (g) {
-      rows = Math.max(rows, g.r + 1);
-      cols = Math.max(cols, g.c + 1);
+      glassRows = Math.max(glassRows, g.r + 1);
+      glassCols = Math.max(glassCols, g.c + 1);
     });
-    var top = by + bh + 16;
-    var bottom = cssH - bar - 12;
-    var roomW = cssW - 28;
-    var roomH = Math.max(80, bottom - top);
-    var cell = Math.min(roomW / (cols + 0.35), roomH / (rows + 0.15));
-    cell = Math.max(36, Math.min(92, cell));
-    var towerW = cell * (cols + 0.15);
-    var towerH = cell * rows * 0.92;
-    geom = {
-      hud: hud, bar: bar, bottles: bottles,
-      cell: cell, rows: rows, cols: cols,
-      x0: (cssW - towerW) / 2 + cell * 0.08,
-      y0: top + Math.max(0, (roomH - towerH) / 2)
-    };
+    var bottleRows = 1;
+    var size = 64;
+    for (var pass = 0; pass < 3; pass++) {
+      size = cssW <= 360 ? 64 : Math.min(80, Math.max(64, Math.round((cssW - 28) / (glassCols + 0.35) * 0.7)));
+      var band = bottleRows * size + Math.max(0, bottleRows - 1) * 4;
+      var top = hud + 8 + band + 14;
+      var bottom = cssH - bar - 12;
+      var roomW = cssW - 28;
+      var roomH = Math.max(80, bottom - top);
+      var cell = Math.min(roomW / (glassCols + 0.35), roomH / (glassRows + 0.15));
+      cell = Math.max(28, Math.min(92, cell));
+      if (cell * (glassCols + 0.35) > roomW) cell = roomW / (glassCols + 0.35);
+      var towerW = cell * (glassCols + 0.15);
+      var towerH = cell * glassRows * 0.92;
+      var x0 = (cssW - towerW) / 2 + cell * 0.08;
+      var y0 = top + Math.max(0, (roomH - towerH) / 2);
+      geom = {
+        hud: hud, bar: bar, bottles: [],
+        cell: cell, rows: glassRows, cols: glassCols, x0: x0, y0: y0
+      };
+      var usedRows = placeBottles(hud + 8, size);
+      if (usedRows === bottleRows) break;
+      bottleRows = usedRows;
+    }
+  }
+
+  function placeBottles(by, size) {
+    var count = level.bottles.length;
+    var art = cssW <= 360 ? 0.7 : 1;
+    var groups = {};
+    var order = [];
+    for (var i = 0; i < count; i++) {
+      var col = level.bottles[i].c;
+      if (!groups[col]) { groups[col] = []; order.push(col); }
+      groups[col].push(i);
+    }
+    var packed = [];
+    for (var g = 0; g < order.length; g++) {
+      var ids = groups[order[g]];
+      var gx = geom.x0 + order[g] * geom.cell + geom.cell * 0.5;
+      var span = ids.length * size;
+      var left = gx - span / 2;
+      var boxes = [];
+      for (var k = 0; k < ids.length; k++) {
+        boxes.push({
+          i: ids[k], x: left + k * size, y: by, w: size, h: size,
+          aim: gx, art: art
+        });
+      }
+      packed.push({ left: left, right: left + span, boxes: boxes });
+    }
+    packed.sort(function (a, b) { return a.left - b.left; });
+    var rowRight = [];
+    for (var p = 0; p < packed.length; p++) {
+      var item = packed[p];
+      var row = 0;
+      for (; row < rowRight.length; row++) {
+        if (item.left >= rowRight[row] - 0.01) break;
+      }
+      if (row === rowRight.length) rowRight.push(item.right);
+      else rowRight[row] = Math.max(rowRight[row], item.right);
+      for (var b = 0; b < item.boxes.length; b++) item.boxes[b].y = by + row * (size + 4);
+    }
+    var margin = 2;
+    for (p = 0; p < packed.length; p++) {
+      var grp = packed[p];
+      var shift = 0;
+      if (grp.left < margin) shift = margin - grp.left;
+      else if (grp.right > cssW - margin) shift = (cssW - margin) - grp.right;
+      if (!shift) continue;
+      for (b = 0; b < grp.boxes.length; b++) grp.boxes[b].x += shift;
+    }
+    var boxes = new Array(count);
+    for (p = 0; p < packed.length; p++) {
+      for (b = 0; b < packed[p].boxes.length; b++) {
+        var box = packed[p].boxes[b];
+        boxes[box.i] = box;
+      }
+    }
+    geom.bottles = boxes;
+    return Math.max(1, rowRight.length);
   }
 
   function load(n) {
@@ -113,13 +179,32 @@
     document.getElementById('name').textContent = level.name;
     syncHud();
     layout();
-    if (!level._graph) {
-      var started = now();
-      F.graph(level);
-      level._solverMs = now() - started;
-    } else level._solverMs = 0;
+    levelStarted = now();
+    graceUntil = 0;
+    winAt = 0;
+    confetti = [];
+    drain = null;
+    solveJob = null;
     paint();
     document.getElementById('loading').classList.add('hidden');
+    if (level._graph) level._solverMs = 0;
+    else {
+      solveJob = F.beginSolve(level);
+      solveT0 = now();
+      setTimeout(pumpSolve, 0);
+    }
+  }
+
+  function pumpSolve() {
+    if (!solveJob || !level || solveJob.level !== level) return;
+    var done = F.stepSolve(solveJob, 3);
+    if (!done) {
+      setTimeout(pumpSolve, 0);
+      return;
+    }
+    level._solverMs = now() - solveT0;
+    solveJob = null;
+    if (!anim && !settled && !winAt) reveal(judge());
   }
 
   function hideAll() {
@@ -151,12 +236,13 @@
   function judge() {
     if (F.won(level, board)) return 'win';
     if (left <= 0) return 'fail';
+    if (!level._graph) return null;
     if (F.distance(level, board) > left) return 'stuck';
     return null;
   }
 
   function reveal(outcome) {
-    if (outcome === 'win') showWin();
+    if (outcome === 'win') winAt = now() + 750;
     else if (outcome === 'fail') showFail();
     else if (outcome === 'stuck') showStuck();
     syncHud();
@@ -189,7 +275,7 @@
     document.getElementById('stuck-copy').textContent = F.stuckText(left);
     var undo = document.getElementById('stuck-undo');
     var prev = stack[stack.length - 1];
-    var offer = !!(prev && F.undoHelps(level, prev, left - 1));
+    var offer = !!(prev && F.undoHelps(level, prev.board, left - 1));
     undo.classList.toggle('hidden', !offer);
     document.getElementById('stuck').classList.remove('hidden');
   }
@@ -217,9 +303,12 @@
   }
 
   function chord() {
-    [523, 659, 784, 1046].forEach(function (freq, i) {
-      setTimeout(function () { tone(freq, 0.18, 'triangle', 0.05); }, i * 80);
-    });
+    var notes = level.glasses.length;
+    for (var i = 0; i < notes; i++) {
+      (function (step) {
+        setTimeout(function () { tone(523 * Math.pow(2, step / 12), 0.16, 'triangle', 0.05); }, step * 70);
+      })(i);
+    }
   }
 
   function pourSound(colour) {
@@ -228,24 +317,27 @@
   }
 
   function beginPour(bottle) {
-    if (anim || settled || overlayOpen() || left < 1) return false;
+    if (anim || now() < graceUntil || settled || overlayOpen() || left < 1) return false;
     if (bottle < 0 || bottle >= level.bottles.length) return false;
     var before = F.clone(board);
     var result = F.pour(level, board, bottle);
-    stack.push(before);
-    board = result.state;
-    left -= 1;
-    used += 1;
+    var spilled = false;
     if (result.kind === 'spill') {
       var push = result.events[result.events.length - 2];
       if (push && push.type === 'push') {
         var glass = level.glasses[push.glass];
         stains.push({ r: glass.r, c: glass.c, lean: push.lean, colour: push.colourOut });
+        spilled = true;
       }
     }
+    stack.push({ board: before, stain: spilled });
+    board = result.state;
+    left -= 1;
+    used += 1;
     anim = {
       bottle: bottle,
       events: result.events,
+      plan: cascadePlan(result.events.length),
       t0: now(),
       before: before,
       outcome: null,
@@ -257,14 +349,17 @@
   }
 
   function undo() {
-    if (anim || settled || left < 1 || !stack.length || overlayOpen()) return;
+    var stuckOpen = stuckShown && !document.getElementById('stuck').classList.contains('hidden');
+    if (anim || settled || left < 1 || !stack.length) return;
+    if (overlayOpen() && !stuckOpen) return;
     hideAll();
     stuckShown = false;
     failShown = false;
-    board = stack.pop();
+    var entry = stack.pop();
+    board = entry.board;
     left -= 1;
     used += 1;
-    if (stains.length) stains.pop();
+    if (entry.stain && stains.length) stains.pop();
     var outcome = F.won(level, board) ? 'win' : (left <= 0 ? 'fail' : null);
     tone(180, 0.06, 'triangle', 0.03);
     if (!outcome && F.distance(level, board) > left) outcome = 'stuck';
@@ -273,24 +368,58 @@
     paint();
   }
 
+  function cascadePlan(count) {
+    var scale = scaleTime();
+    var cap = 1140 * scale;
+    var lead = 200 * scale;
+    var full = 280 * scale;
+    var rest = Math.max(0, count - 1);
+    var room = cap - lead - full;
+    var mid = rest ? Math.min(full, room / rest) : 0;
+    if (room < 0) {
+      var fit = cap / (lead + full);
+      lead *= fit;
+      full *= fit;
+      mid = 0;
+    }
+    var marks = [0, lead];
+    var cursor = lead;
+    for (var i = 0; i < count; i++) {
+      cursor += i === 0 ? full : mid;
+      marks.push(cursor);
+    }
+    return { lead: lead, full: full, mid: mid, total: Math.min(cap, cursor), marks: marks };
+  }
+
   function animClock(t) {
     if (!anim) return null;
-    var intro = 280 * scaleTime();
-    var step = 250 * scaleTime();
+    var plan = anim.plan;
     var elapsed = t - anim.t0;
-    var total = intro + anim.events.length * step;
-    if (elapsed >= total) return { done: true, index: anim.events.length, u: 1 };
-    if (elapsed < intro) return { done: false, index: -1, u: elapsed / intro, event: null };
-    var index = Math.floor((elapsed - intro) / step);
-    return { done: false, index: index, u: ((elapsed - intro) - index * step) / step, event: anim.events[index] };
+    if (elapsed >= plan.total) return { done: true, index: anim.events.length, u: 1, event: null };
+    if (elapsed < plan.lead) return { done: false, index: -1, u: elapsed / plan.lead, event: null };
+    for (var i = 0; i < anim.events.length; i++) {
+      var start = plan.marks[i + 1];
+      var end = plan.marks[i + 2];
+      if (elapsed < end) return { done: false, index: i, u: (elapsed - start) / (end - start), event: anim.events[i] };
+    }
+    return { done: true, index: anim.events.length, u: 1, event: null };
   }
 
   function viewState(phase) {
-    var cont = anim.before.cont.map(function (g) { return g.slice(); });
-    var tilt = anim.before.tilt.slice();
+    var src = anim.before;
+    for (var g = 0; g < src.cont.length; g++) {
+      var from = src.cont[g];
+      var dest = viewCont[g];
+      if (!dest) dest = viewCont[g] = [];
+      dest.length = from.length;
+      for (var k = 0; k < from.length; k++) dest[k] = from[k];
+    }
+    viewCont.length = src.cont.length;
+    viewTilt.length = src.tilt.length;
+    for (var t = 0; t < src.tilt.length; t++) viewTilt[t] = src.tilt[t];
     var limit = phase.index < 0 ? 0 : phase.index;
-    for (var i = 0; i < limit; i++) applyShown(cont, tilt, anim.events[i]);
-    return { cont: cont, tilt: tilt };
+    for (var i = 0; i < limit; i++) applyShown(viewCont, viewTilt, anim.events[i]);
+    return { cont: viewCont, tilt: viewTilt };
   }
 
   function applyShown(cont, tilt, event) {
@@ -321,8 +450,8 @@
     grad.addColorStop(1, '#5A2E5C');
     g.fillStyle = grad;
     g.fillRect(0, 0, cssW, cssH);
-    g.globalAlpha = 0.35;
-    var spots = [[0.2, 0.15, 46, '#E7C36A'], [0.78, 0.22, 36, '#E8344E'], [0.5, 0.08, 28, '#F7F3EA'], [0.12, 0.4, 22, '#3F6FE0'], [0.86, 0.55, 30, '#E7C36A']];
+    g.globalAlpha = 0.12;
+    var spots = [[0.18, 0.12, 18, '#E7C36A'], [0.8, 0.18, 14, '#E8344E'], [0.55, 0.08, 10, '#F7F3EA'], [0.1, 0.7, 12, '#3F6FE0'], [0.88, 0.62, 16, '#E7C36A']];
     for (var i = 0; i < spots.length; i++) {
       g.fillStyle = spots[i][3];
       g.beginPath();
@@ -343,38 +472,49 @@
     ctx.closePath();
   }
 
+  function sprite(style) {
+    if (sprites[style]) return sprites[style];
+    var c = document.createElement('canvas');
+    c.width = 48;
+    c.height = 48;
+    var g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,.55)';
+    g.fillStyle = 'rgba(255,255,255,.45)';
+    if (style === 'dots') {
+      for (var y = 4; y < 48; y += 7) {
+        for (var x = 4; x < 48; x += 7) {
+          g.beginPath();
+          g.arc(x, y, 1.5, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    } else if (style === 'stripes') {
+      g.lineWidth = 2;
+      for (var s = 3; s < 48; s += 6) {
+        g.beginPath();
+        g.moveTo(0, s);
+        g.lineTo(48, s);
+        g.stroke();
+      }
+    } else {
+      g.lineWidth = 1.5;
+      g.beginPath();
+      for (var wave = 4; wave < 48; wave += 6) {
+        g.moveTo(0, wave);
+        g.bezierCurveTo(14, wave - 3, 30, wave + 3, 48, wave);
+      }
+      g.stroke();
+    }
+    sprites[style] = c;
+    return c;
+  }
+
   function pattern(style, x, y, w, h) {
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
     ctx.clip();
-    ctx.strokeStyle = 'rgba(255,255,255,.45)';
-    ctx.fillStyle = 'rgba(255,255,255,.35)';
-    if (style === 'dots') {
-      for (var yy = y + 4; yy < y + h; yy += 7) {
-        for (var xx = x + 4; xx < x + w; xx += 7) {
-          ctx.beginPath();
-          ctx.arc(xx, yy, 1.3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    } else if (style === 'stripes') {
-      ctx.lineWidth = 2;
-      for (var s = y + 3; s < y + h; s += 6) {
-        ctx.beginPath();
-        ctx.moveTo(x, s);
-        ctx.lineTo(x + w, s);
-        ctx.stroke();
-      }
-    } else {
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      for (var wave = y + 4; wave < y + h; wave += 6) {
-        ctx.moveTo(x, wave);
-        ctx.bezierCurveTo(x + w * 0.3, wave - 3, x + w * 0.6, wave + 3, x + w, wave);
-      }
-      ctx.stroke();
-    }
+    ctx.drawImage(sprite(style), x, y, w, h);
     ctx.restore();
   }
 
@@ -422,12 +562,27 @@
     drawLiquid(-w / 2 + 3, -h / 2 + 3, w - 6, h - 6, cont);
     var target = level.target[i];
     var band = (h - 6) / target.length;
+    var solved = cont.length === target.length;
     for (var b = 0; b < target.length; b++) {
       var match = cont[b] === target[b];
-      ctx.strokeStyle = (COLOUR[target[b]] || COLOUR.A).fill;
-      ctx.globalAlpha = match ? 0.95 : 0.45;
+      if (!match) solved = false;
+      var colour = (COLOUR[target[b]] || COLOUR.A).fill;
+      var by = h / 2 - 6 - (b + 1) * band + 2;
+      ctx.fillStyle = colour;
+      ctx.globalAlpha = 0.15;
+      ctx.fillRect(-w / 2 + 6, by, w - 12, band - 3);
+      ctx.strokeStyle = colour;
+      ctx.globalAlpha = match ? 1 : 0.95;
+      ctx.lineWidth = 2;
       ctx.setLineDash(match ? [] : [3, 3]);
-      ctx.strokeRect(-w / 2 + 6, h / 2 - 6 - (b + 1) * band + 2, w - 12, band - 3);
+      ctx.strokeRect(-w / 2 + 6, by, w - 12, band - 3);
+    }
+    if (solved && target.length) {
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#F7F3EA';
+      ctx.beginPath();
+      ctx.arc(0, -h * 0.42, 3, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -447,21 +602,40 @@
     var spec = level.bottles[i];
     var style = COLOUR[spec.colour];
     var bob = anim ? 0 : Math.sin(now() / 420 + i) * 3;
+    var wiggle = wiggles[i] && now() < wiggles[i] ? Math.sin((wiggles[i] - now()) / 28) * 0.18 : 0;
+    var aim = Math.max(-0.4, Math.min(0.4, (box.aim - (box.x + box.w / 2)) / box.h));
     ctx.save();
     ctx.translate(box.x + box.w / 2, box.y + box.h / 2 + bob);
-    ctx.rotate(tipping || 0);
+    ctx.rotate((tipping || 0) + wiggle + aim);
+    ctx.scale(box.art || 1, box.art || 1);
+    if (level.n === 1 && used === 0 && !anim) {
+      var pulse = 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(now() / 180));
+      ctx.strokeStyle = 'rgba(232,52,78,' + pulse + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, 4, box.w * 0.34, box.h * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = 'rgba(255,255,255,.25)';
     ctx.strokeStyle = 'rgba(255,255,255,.85)';
     ctx.lineWidth = 2;
-    roundRect(-12, -box.h * 0.42, 24, box.h * 0.78, 8);
+    roundRect(-12, -box.h * 0.34, 24, box.h * 0.62, 8);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = style.fill;
-    ctx.fillRect(-10, -box.h * 0.05, 20, box.h * 0.32);
-    pattern(style.pattern, -10, -box.h * 0.05, 20, box.h * 0.32);
-    ctx.fillStyle = 'rgba(255,255,255,.7)';
-    ctx.fillRect(-4, -box.h * 0.42, 8, 12);
+    ctx.fillRect(-10, -box.h * 0.22, 20, box.h * 0.34);
+    pattern(style.pattern, -10, -box.h * 0.22, 20, box.h * 0.34);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.fillRect(-4, box.h * 0.26, 8, box.h * 0.16);
     ctx.restore();
+    if (level.n === 2 && used === 0 && !anim && spec.colour === 'B' && now() - levelStarted > 4000) {
+      ctx.fillStyle = 'rgba(139,212,58,.85)';
+      ctx.beginPath();
+      ctx.moveTo(box.x + box.w / 2, box.y + box.h + 8);
+      ctx.lineTo(box.x + box.w / 2 - 7, box.y + box.h + 20);
+      ctx.lineTo(box.x + box.w / 2 + 7, box.y + box.h + 20);
+      ctx.fill();
+    }
   }
 
   function drawStains() {
@@ -516,6 +690,53 @@
     ctx.setLineDash([]);
   }
 
+  function drawTowerBody(shown, tilt, skip, drainU) {
+    ctx.fillStyle = '#F7F3EA';
+    roundRect(geom.x0 - 18, geom.y0 - 8, geom.cell * (geom.cols + 0.2) + 20, geom.cell * geom.rows * 0.92 + 28, 16);
+    ctx.fill();
+    drawStains();
+    for (var i = 0; i < level.glasses.length; i++) {
+      if (i === skip) continue;
+      var layers = shown.cont[i];
+      if (drainU > 0) layers = layers.slice(0, Math.max(0, Math.ceil(layers.length * (1 - drainU)) - 1));
+      drawGlass(i, layers, tilt[i], 0);
+    }
+  }
+
+  function towerStamp(shown, tilt, skip) {
+    var parts = level.n + '|' + skip + '|' + dpr + '|' + cssW + '|' + geom.cell + '|' + stains.length;
+    for (var i = 0; i < shown.cont.length; i++) {
+      parts += i === skip ? '|~' : ('|' + tilt[i] + shown.cont[i].join(''));
+    }
+    return parts;
+  }
+
+  function blitTower(shown, tilt, skip) {
+    var stamp = towerStamp(shown, tilt, skip);
+    if (!towerLayer || towerLayer.stamp !== stamp || towerLayer.w !== canvas.width) {
+      var c = towerLayer ? towerLayer.canvas : document.createElement('canvas');
+      if (c.width !== canvas.width || c.height !== canvas.height) {
+        c.width = canvas.width;
+        c.height = canvas.height;
+      }
+      var g = c.getContext('2d');
+      var saved = ctx;
+      ctx = g;
+      try {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
+        drawTowerBody(shown, tilt, skip, 0);
+      } finally {
+        ctx = saved;
+      }
+      towerLayer = { canvas: c, stamp: stamp, w: canvas.width };
+    }
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(towerLayer.canvas, 0, 0);
+    ctx.restore();
+  }
+
   function paint() {
     ensureBackdrop();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -533,14 +754,28 @@
       shown = view;
       tilt = view.tilt;
     }
-    drawStains();
-    for (var i = 0; i < level.glasses.length; i++) {
-      var wobble = 0;
-      if (anim && phase && phase.event && phase.event.glass === i && phase.event.rock) {
-        wobble = Math.sin(phase.u * Math.PI) * 0.14 * (phase.event.lean === 'L' ? 1 : -1);
-      }
-      drawGlass(i, shown.cont[i], tilt[i], wobble);
+    var drainU = drain ? Math.min(1, (now() - drain.t0) / drain.dur) : 0;
+    var skip = -1;
+    var wobble = 0;
+    if (anim && phase && phase.event && phase.event.rock && phase.event.glass != null) {
+      skip = phase.event.glass;
+      wobble = Math.sin(phase.u * Math.PI) * 0.14 * (phase.event.lean === 'L' ? 1 : -1);
     }
+    if (drainU > 0) drawTowerBody(shown, tilt, -1, drainU);
+    else blitTower(shown, tilt, skip);
+    if (level.n === 3 && used === 0 && !anim) {
+      var glow = 0.35 + 0.35 * Math.sin(now() / 200);
+      ctx.strokeStyle = 'rgba(231,195,106,' + glow + ')';
+      ctx.lineWidth = 3;
+      for (var r = 0; r < level.glasses.length; r++) {
+        if (!level.rock[r]) continue;
+        var spot = glassCenter(level.glasses[r]);
+        ctx.beginPath();
+        ctx.ellipse(spot.x, spot.y + 8, geom.cell * 0.34, geom.cell * 0.16, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    if (skip >= 0) drawGlass(skip, shown.cont[skip], tilt[skip], wobble);
     if (anim && phase && !phase.done && phase.index >= 0 && phase.event && phase.event.type === 'push') {
       drawRibbon(phase.event, phase.u);
     }
@@ -550,7 +785,8 @@
       drawStream(bottle.x + bottle.w / 2, bottle.y + bottle.h, top.x, top.y - 10, level.bottles[anim.bottle].colour);
     }
     for (var b = 0; b < level.bottles.length; b++) {
-      var tip = anim && anim.bottle === b && phase && phase.index < 0 ? 0.35 : 0;
+      var tip = 0;
+      if (anim && anim.bottle === b && phase && phase.index < 0) tip = phase.u < 0.22 ? -0.035 : 0.4;
       drawBottle(b, tip);
     }
     drawPathPreview();
@@ -561,6 +797,12 @@
       ctx.beginPath();
       ctx.arc(bub.x, bub.y, bub.r, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    for (var f = 0; f < confetti.length; f++) {
+      var bit = confetti[f];
+      ctx.globalAlpha = Math.max(0, bit.life);
+      ctx.fillStyle = bit.color;
+      ctx.fillRect(bit.x, bit.y, 4, 6);
     }
     ctx.globalAlpha = 1;
   }
@@ -587,10 +829,43 @@
         }
       }
       if (phase && phase.done) {
+        lastCascadeMs = t - anim.t0;
+        cascadeEndedAt = t;
         var outcome = judge();
         anim = null;
+        graceUntil = t + 150;
         reveal(outcome);
       }
+    }
+    if (winAt && t >= winAt) {
+      winAt = 0;
+      showWin();
+      for (var c = 0; c < 28; c++) {
+        confetti.push({
+          x: cssW * (0.2 + Math.random() * 0.6),
+          y: geom.y0,
+          vx: (Math.random() - 0.5) * 80,
+          vy: -40 - Math.random() * 80,
+          life: 1,
+          color: ['#E8344E', '#8BD43A', '#3F6FE0', '#E7C36A'][c % 4]
+        });
+      }
+    }
+    if (drain && t >= drain.t0 + drain.dur) {
+      var back = drain.level;
+      drain = null;
+      load(back);
+    }
+    if (confetti.length) {
+      for (var c = 0; c < confetti.length; c++) {
+        confetti[c].x += confetti[c].vx / 60;
+        confetti[c].y += confetti[c].vy / 60;
+        confetti[c].vy += 80 / 60;
+        confetti[c].life -= 0.012;
+      }
+      var alive = [];
+      for (c = 0; c < confetti.length; c++) if (confetti[c].life > 0) alive.push(confetti[c]);
+      confetti = alive;
     }
     if (bubbles.length) {
       for (var i = 0; i < bubbles.length; i++) {
@@ -636,28 +911,45 @@
     armQuiet();
   }, true);
 
+  function acknowledge(index) {
+    wiggleCount += 1;
+    if (index >= 0) wiggles[index] = now() + 220;
+    tone(740, 0.035, 'triangle', 0.02);
+  }
+
   canvas.addEventListener('pointerdown', function (event) {
     if (event.button !== undefined && event.button !== 0) return;
     ensureAudio();
-    if (overlayOpen() || !geom || settled || blockUntilLift || anim) {
+    var p = localPoint(event);
+    var hit = hitBottle(p.x, p.y);
+    if (anim || now() < graceUntil) {
+      acknowledge(hit);
+      return;
+    }
+    if (overlayOpen() || !geom || settled || blockUntilLift || drain || winAt) {
       if (now() < tapQuietUntil) armQuiet();
       return;
     }
     if (now() < tapQuietUntil) {
       armQuiet();
+      acknowledge(hit);
       return;
     }
-    var p = localPoint(event);
-    var hit = hitBottle(p.x, p.y);
     if (hit >= 0) beginPour(hit);
   });
 
   document.getElementById('undo').addEventListener('click', undo);
-  document.getElementById('restart').addEventListener('click', function () { load(level.n); });
-  document.getElementById('stuck-restart').addEventListener('click', function () { load(level.n); });
+  function requestRestart() {
+    if (drain || !level) return;
+    hideAll();
+    stuckShown = false;
+    drain = { t0: now(), dur: 300, level: level.n };
+  }
+  document.getElementById('restart').addEventListener('click', requestRestart);
+  document.getElementById('stuck-restart').addEventListener('click', requestRestart);
   document.getElementById('stuck-undo').addEventListener('click', undo);
-  document.getElementById('fail-restart').addEventListener('click', function () { load(level.n); });
-  document.getElementById('win-retry').addEventListener('click', function () { load(level.n); });
+  document.getElementById('fail-restart').addEventListener('click', requestRestart);
+  document.getElementById('win-retry').addEventListener('click', requestRestart);
   document.getElementById('win-next').addEventListener('click', function () { if (level.n < F.levels().length) load(level.n + 1); });
   document.getElementById('menu').addEventListener('click', function () {
     hideAll();
@@ -699,13 +991,17 @@
     if (event.key === 'r' || event.key === 'R') { load(level.n); return; }
     if (event.key >= '1' && event.key <= '4') {
       var index = +event.key - 1;
-      if (index < level.bottles.length) beginPour(index);
+      if (index >= level.bottles.length) return;
+      if (anim || now() < graceUntil) { acknowledge(index); return; }
+      beginPour(index);
     }
   });
 
   var params = new URLSearchParams(location.search);
   if (params.get('path') === '1') showPath = true;
-  var initial = Math.max(1, Math.min(10, +(params.get('level') || 1)));
+  var rawLevel = params.get('level');
+  var parsedLevel = rawLevel == null || rawLevel === '' ? 1 : parseInt(rawLevel, 10);
+  var initial = (isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 10) ? parsedLevel : 1;
   load(initial);
   window.addEventListener('resize', resize);
   resize();
@@ -716,7 +1012,46 @@
     get solverReady() { return !!(level && level._graph); },
     solverMs: function () { return level ? level._solverMs || 0 : 0; },
     load: load,
+    undo: function () { undo(); },
     commit: function (index) { return beginPour(index); },
+    wiggles: function () { return wiggleCount; },
+    stains: function () { return stains.length; },
+    cascadeMs: function (count) { return cascadePlan(count).total; },
+    cascadePlan: function (count) {
+      var plan = cascadePlan(count);
+      return { total: plan.total, lead: plan.lead, full: plan.full, mid: plan.mid };
+    },
+    lastCascadeMs: function () { return lastCascadeMs; },
+    cascadeEnded: function () { return cascadeEndedAt; },
+    graceLeft: function () { return Math.max(0, graceUntil - now()); },
+    prepareLongest: function () {
+      var bestN = 0;
+      var bestState = null;
+      var bestB = 0;
+      level._graph.states.forEach(function (state) {
+        for (var b = 0; b < level.bottles.length; b++) {
+          var n = F.pour(level, state, b).events.length;
+          if (n > bestN) { bestN = n; bestState = state; bestB = b; }
+        }
+      });
+      prepared = { state: bestState, bottle: bestB, events: bestN };
+      return bestN;
+    },
+    playPrepared: function () {
+      if (!prepared) return 0;
+      graceUntil = 0;
+      anim = null;
+      settled = false;
+      board = F.clone(prepared.state);
+      beginPour(prepared.bottle);
+      paint();
+      return prepared.events;
+    },
+    armLongest: function () {
+      var n = this.prepareLongest();
+      this.playPrepared();
+      return n;
+    },
     instant: function (index) {
       var playing = beginPour(index);
       if (!playing) return false;
@@ -753,7 +1088,11 @@
         hud: geom.hud,
         bar: geom.bar,
         bottles: geom.bottles.map(function (box, i) {
-          return { i: i, x: box.x, y: box.y, w: box.w, h: box.h, cx: rect.left + box.x + box.w / 2, cy: rect.top + box.y + box.h / 2 };
+          return {
+            i: i, x: box.x, y: box.y, w: box.w, h: box.h, art: box.art,
+            cx: rect.left + box.x + box.w / 2, cy: rect.top + box.y + box.h / 2,
+            aim: box.aim, col: level.bottles[i].c
+          };
         })
       };
     },

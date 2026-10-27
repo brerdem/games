@@ -160,63 +160,134 @@
     return { par: null, states: dist.size };
   }
 
+  function nowMs() {
+    return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  }
+
+  function beginSolve(level) {
+    if (level._graph) return null;
+    var origin = start(level);
+    var okey = encode(origin);
+    var job = {
+      level: level,
+      states: new Map(),
+      edges: new Map(),
+      depthOf: new Map(),
+      queue: [okey],
+      qi: 0,
+      phase: 'forward',
+      okey: okey
+    };
+    job.states.set(okey, origin);
+    job.depthOf.set(okey, 0);
+    return job;
+  }
+
+  function finishSolve(job) {
+    var level = job.level;
+    level._graph = { states: job.states, edges: job.edges, dist: job.dist, startKey: job.okey };
+    return level._graph;
+  }
+
+  function stepSolve(job, budgetMs) {
+    var level = job.level;
+    var start = nowMs();
+    var guard = budgetMs == null ? 1000000 : budgetMs;
+    if (job.phase === 'forward') {
+      while (job.qi < job.queue.length) {
+        if (nowMs() - start >= guard) return false;
+        var key = job.queue[job.qi++];
+        var d0 = job.depthOf.get(key);
+        var here = job.states.get(key);
+        var list = [];
+        if (d0 < level.budget) {
+          for (var b = 0; b < level.bottles.length; b++) {
+            var nxt = pour(level, here, b).state;
+            var nk = encode(nxt);
+            if (!job.states.has(nk)) {
+              job.states.set(nk, nxt);
+              job.depthOf.set(nk, d0 + 1);
+              job.queue.push(nk);
+            }
+            list.push({ bottle: b, key: nk });
+          }
+        }
+        job.edges.set(key, list);
+      }
+      job.phase = 'index';
+      job.edgeKeys = [];
+      job.rev = new Map();
+      job.keyIter = job.states.keys();
+    }
+    if (job.phase === 'index') {
+      while (true) {
+        if (nowMs() - start >= guard) return false;
+        var nextKey = job.keyIter.next();
+        if (nextKey.done) break;
+        job.edgeKeys.push(nextKey.value);
+        job.rev.set(nextKey.value, []);
+      }
+      job.phase = 'link';
+      job.ei = 0;
+    }
+    if (job.phase === 'link') {
+      while (job.ei < job.edgeKeys.length) {
+        if (nowMs() - start >= guard) return false;
+        var from = job.edgeKeys[job.ei++];
+        var edges = job.edges.get(from);
+        for (var i = 0; i < edges.length; i++) job.rev.get(edges[i].key).push(from);
+      }
+      job.phase = 'goals';
+      job.stateKeys = job.edgeKeys;
+      job.si = 0;
+      job.goals = [];
+    }
+    if (job.phase === 'goals') {
+      while (job.si < job.stateKeys.length) {
+        if (nowMs() - start >= guard) return false;
+        var gk = job.stateKeys[job.si++];
+        if (won(level, job.states.get(gk))) job.goals.push(gk);
+      }
+      job.phase = 'dist';
+      job.dist = new Map();
+      job.dq = job.goals.slice();
+      job.di = 0;
+      for (var g = 0; g < job.goals.length; g++) job.dist.set(job.goals[g], 0);
+    }
+    while (job.di < job.dq.length) {
+      if (nowMs() - start >= guard) return false;
+      var cur = job.dq[job.di++];
+      var preds = job.rev.get(cur) || [];
+      var nextD = job.dist.get(cur) + 1;
+      for (var p = 0; p < preds.length; p++) {
+        if (!job.dist.has(preds[p])) {
+          job.dist.set(preds[p], nextD);
+          job.dq.push(preds[p]);
+        }
+      }
+    }
+    finishSolve(job);
+    return true;
+  }
+
   function graph(level) {
     if (level._graph) return level._graph;
-    var origin = start(level);
-    var states = new Map();
-    var edges = new Map();
-    var depthOf = new Map();
-    var okey = encode(origin);
-    states.set(okey, origin);
-    depthOf.set(okey, 0);
-    var queue = [okey];
-    var qi = 0;
-    var key;
-    while (qi < queue.length) {
-      key = queue[qi++];
-      var d0 = depthOf.get(key);
-      var here = states.get(key);
-      var list = [];
-      if (d0 < level.budget) {
-        for (var b = 0; b < level.bottles.length; b++) {
-          var nxt = pour(level, here, b).state;
-          var nk = encode(nxt);
-          if (!states.has(nk)) {
-            states.set(nk, nxt);
-            depthOf.set(nk, d0 + 1);
-            queue.push(nk);
-          }
-          list.push({ bottle: b, key: nk });
-        }
-      }
-      edges.set(key, list);
-    }
-    var dist = new Map();
-    var goals = [];
-    states.forEach(function (state, key) {
-      if (won(level, state)) goals.push(key);
-    });
-    var rev = new Map();
-    states.forEach(function (_s, key) { rev.set(key, []); });
-    edges.forEach(function (list, key) {
-      for (var i = 0; i < list.length; i++) rev.get(list[i].key).push(key);
-    });
-    var dq = goals.slice();
-    for (var g = 0; g < goals.length; g++) dist.set(goals[g], 0);
-    var di = 0;
-    while (di < dq.length) {
-      var cur = dq[di++];
-      var preds = rev.get(cur) || [];
-      var nextD = dist.get(cur) + 1;
-      for (var p = 0; p < preds.length; p++) {
-        if (!dist.has(preds[p])) {
-          dist.set(preds[p], nextD);
-          dq.push(preds[p]);
-        }
-      }
-    }
-    level._graph = { states: states, edges: edges, dist: dist, startKey: okey };
+    var job = beginSolve(level);
+    if (!job) return level._graph;
+    while (!stepSolve(job, 1000000)) { /* run to the end */ }
     return level._graph;
+  }
+
+  function maxEvents(level) {
+    var g = graph(level);
+    var best = 0;
+    g.states.forEach(function (state) {
+      for (var b = 0; b < level.bottles.length; b++) {
+        var n = pour(level, state, b).events.length;
+        if (n > best) best = n;
+      }
+    });
+    return best;
   }
 
   function distance(level, state) {
@@ -329,6 +400,9 @@
     playRef: playRef,
     countUntilGoal: countUntilGoal,
     graph: graph,
+    beginSolve: beginSolve,
+    stepSolve: stepSolve,
+    maxEvents: maxEvents,
     distance: distance,
     stuckText: stuckText,
     undoHelps: undoHelps,
