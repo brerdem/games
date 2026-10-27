@@ -623,16 +623,21 @@
     for (var b = 0; b < target.length; b++) {
       var match = cont[b] === target[b];
       if (!match) solved = false;
-      var colour = (COLOUR[target[b]] || COLOUR.A).fill;
+      var colour = (COLOUR[target[b]] || COLOUR.A);
       var by = h / 2 - 6 - (b + 1) * band + 2;
-      ctx.fillStyle = colour;
-      ctx.globalAlpha = 0.15;
-      ctx.fillRect(-w / 2 + 6, by, w - 12, band - 3);
-      ctx.strokeStyle = colour;
-      ctx.globalAlpha = match ? 1 : 0.95;
-      ctx.lineWidth = 2;
-      ctx.setLineDash(match ? [] : [3, 3]);
-      ctx.strokeRect(-w / 2 + 6, by, w - 12, band - 3);
+      var bx = -w / 2 + 6;
+      var bw = w - 12;
+      var bh = band - 3;
+      ctx.fillStyle = colour.fill;
+      ctx.globalAlpha = match ? 0.72 : 0.58;
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.globalAlpha = match ? 0.9 : 0.75;
+      pattern(colour.pattern, bx, by, bw, bh);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = colour.ink;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([]);
+      ctx.strokeRect(bx, by, bw, bh);
     }
     if (solved && target.length) {
       ctx.globalAlpha = 0.9;
