@@ -29,6 +29,36 @@
   @media (max-width: 520px) and (orientation: portrait) {
     #stage { width: 100vw; height: 100dvh; max-height: none; }
   }
+  #rotate {
+    display: none;
+    position: fixed; inset: 0; z-index: 30;
+    background: #2B1B3D; color: #F7F3EA;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 24px;
+  }
+  #rotate h2 { margin: 0 0 8px; font-size: 32px; }
+  #rotate p { margin: 0; font-size: 18px; }
+  @media (orientation: landscape) and (max-height: 520px) {
+    #rotate { display: flex; }
+    #stage { display: none; }
+  }
+  #bar.hidden, #checking.hidden { display: none; }
+  #checking {
+    position: absolute; left: 0; right: 0; bottom: 78px; z-index: 4;
+    text-align: center; color: #E7C36A; letter-spacing: .08em; font-size: 13px;
+    pointer-events: none;
+  }
+  #win.strip {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+    background: #F7F3EA; color: #2B1B3D;
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  #win.strip.hidden { display: none; }
+  #win.strip strong { font-size: 22px; }
+  #win.strip .stars { font-size: 16px; }
+  #win.strip p { margin: 0; font-size: 13px; }
+  #win.strip .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; z-index: 1; }
   button {
     font-family: inherit; color: #2B1B3D; background: #E7C36A;
@@ -76,6 +106,12 @@
 </style>
 </head>
 <body>
+  <div id="rotate">
+    <div>
+      <h2>Rotate your phone</h2>
+      <p>Fizz Tower is played upright.</p>
+    </div>
+  </div>
   <div id="stage">
     <canvas id="c"></canvas>
     <header id="hud">
@@ -108,27 +144,27 @@
       <div class="card">
         <h2>How to pour</h2>
         <p>The first pour ends up lowest. A brass coaster flips after every spill. A drip on the cloth still rocks the glass.</p>
-        <p>Undo spends one pour. Finish every glass on its dashed bands.</p>
+        <p>Undo puts the last pour back and still spends one pour. Finish every glass on its dashed bands.</p>
         <button id="help-close" type="button">Back</button>
       </div>
     </div>
-    <div id="win" class="overlay hidden">
-      <div class="card">
-        <h2>Cheers!</h2>
-        <p class="stars" id="win-stars"></p>
+    <div id="checking" class="hidden">Checking the tower…</div>
+    <div id="win" class="strip hidden">
+      <div>
+        <strong>Cheers!</strong>
+        <span class="stars" id="win-stars"></span>
         <p id="win-copy"></p>
-        <div class="row">
-          <button id="win-next" type="button" class="primary">Next</button>
-          <button id="win-retry" type="button">Restart</button>
-          <button id="win-menu" type="button">Menu</button>
-        </div>
+      </div>
+      <div class="row">
+        <button id="win-next" type="button" class="primary">Next</button>
+        <button id="win-retry" type="button">Restart</button>
+        <button id="win-menu" type="button">Menu</button>
       </div>
     </div>
     <div id="stuck" class="overlay hidden">
       <div class="card">
         <h2 id="stuck-copy">This tower can't be finished in 0 pours</h2>
         <div class="row">
-          <button id="stuck-undo" type="button" class="hidden">Undo −1</button>
           <button id="stuck-restart" type="button" class="primary">Restart</button>
         </div>
       </div>
@@ -145,6 +181,7 @@
     </div>
   </div>
   <script src="pack.js"></script>
+  <script src="l10dist.js"></script>
   <script src="logic.js"></script>
   <script src="game.js"></script>
 </body>

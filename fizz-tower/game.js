@@ -45,6 +45,7 @@
   var towerLayer = null;
   var prepared = null;
   var showPath = false;
+  var ftLog = [];
   var backdrop = null;
   var reduced = false;
   try { reduced = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (err) { reduced = false; }
@@ -67,6 +68,8 @@
     paint();
   }
 
+  var RIM_GAP = 12;
+
   function layout() {
     if (!level) return;
     var hud = document.getElementById('hud').offsetHeight || 64;
@@ -77,87 +80,132 @@
       glassRows = Math.max(glassRows, g.r + 1);
       glassCols = Math.max(glassCols, g.c + 1);
     });
-    var bottleRows = 1;
-    var size = 64;
-    for (var pass = 0; pass < 3; pass++) {
-      size = cssW <= 360 ? 64 : Math.min(80, Math.max(64, Math.round((cssW - 28) / (glassCols + 0.35) * 0.7)));
-      var band = bottleRows * size + Math.max(0, bottleRows - 1) * 4;
-      var top = hud + 8 + band + 14;
-      var bottom = cssH - bar - 12;
-      var roomW = cssW - 28;
-      var roomH = Math.max(80, bottom - top);
-      var cell = Math.min(roomW / (glassCols + 0.35), roomH / (glassRows + 0.15));
-      cell = Math.max(28, Math.min(92, cell));
-      if (cell * (glassCols + 0.35) > roomW) cell = roomW / (glassCols + 0.35);
-      var towerW = cell * (glassCols + 0.15);
-      var towerH = cell * glassRows * 0.92;
-      var x0 = (cssW - towerW) / 2 + cell * 0.08;
-      var y0 = top + Math.max(0, (roomH - towerH) / 2);
+    var art = cssW <= 360 ? 0.7 : 1;
+    var cell = Math.min(148, (cssW - 4) / glassCols);
+    var guard = 0;
+    while (guard++ < 16) {
+      var fitted = largestFit(cell, glassCols, art);
       geom = {
-        hud: hud, bar: bar, bottles: [],
-        cell: cell, rows: glassRows, cols: glassCols, x0: x0, y0: y0
+        hud: hud, bar: bar, bottles: fitted.boxes,
+        cell: cell, rows: glassRows, cols: glassCols, x0: fitted.x0, y0: 0
       };
-      var usedRows = placeBottles(hud + 8, size);
-      if (usedRows === bottleRows) break;
-      bottleRows = usedRows;
+      var y0 = 0;
+      for (var i = 0; i < geom.bottles.length; i++) {
+        var box = geom.bottles[i];
+        var glass = entryGlass(i);
+        y0 = Math.max(y0, hud + 4 + RIM_GAP + spoutDrop(box) - rimOffset(glass));
+      }
+      geom.y0 = y0;
+      for (i = 0; i < geom.bottles.length; i++) {
+        box = geom.bottles[i];
+        geom.bottles[i].y = y0 + rimOffset(entryGlass(i)) - RIM_GAP - spoutDrop(box);
+      }
+      var towerBottom = y0 + glassRows * cell * 0.92 + 16;
+      if (towerBottom <= cssH - bar - 4 || cell <= 26) break;
+      cell *= 0.92;
     }
   }
 
-  function placeBottles(by, size) {
-    var count = level.bottles.length;
-    var art = cssW <= 360 ? 0.7 : 1;
+  function entryGlass(i) {
+    var spec = level.bottles[i];
+    return level.glasses[level.indexOf[spec.r + ',' + spec.c]];
+  }
+
+  function rimOffset(glass) {
+    var tall = glass.cap === 2;
+    var gh = geom.cell * (tall ? 0.7 : 0.42);
+    var ang = glass.tilt === 'L' ? -0.2 : 0.2;
+    return glass.r * geom.cell * 0.92 + geom.cell * 0.46 - (gh / 2) * Math.cos(ang);
+  }
+
+  function aimAngle(box) {
+    return Math.max(-0.4, Math.min(0.4, (box.aim - (box.x + box.w / 2)) / box.h));
+  }
+
+  function spoutDrop(box) {
+    var localY = box.h * 0.42 * (box.art || 1);
+    return box.h / 2 + Math.cos(aimAngle(box)) * localY;
+  }
+
+  function spoutOf(box, extra) {
+    var ang = aimAngle(box) + (extra || 0);
+    var localY = box.h * 0.42 * (box.art || 1);
+    var cx = box.x + box.w / 2;
+    var cy = box.y + box.h / 2;
+    return { x: cx - Math.sin(ang) * localY, y: cy + Math.cos(ang) * localY };
+  }
+
+  function rimPoint(glass, tilt) {
+    var at = glassCenter(glass);
+    var tall = glass.cap === 2;
+    var gh = geom.cell * (tall ? 0.7 : 0.42);
+    var ang = (tilt || glass.tilt) === 'L' ? -0.2 : 0.2;
+    return { x: at.x + Math.sin(ang) * gh / 2, y: at.y - Math.cos(ang) * gh / 2 };
+  }
+
+  function placeRow(x0, cell, size, art) {
     var groups = {};
     var order = [];
-    for (var i = 0; i < count; i++) {
+    for (var i = 0; i < level.bottles.length; i++) {
       var col = level.bottles[i].c;
       if (!groups[col]) { groups[col] = []; order.push(col); }
       groups[col].push(i);
     }
-    var packed = [];
+    var boxes = new Array(level.bottles.length);
     for (var g = 0; g < order.length; g++) {
       var ids = groups[order[g]];
-      var gx = geom.x0 + order[g] * geom.cell + geom.cell * 0.5;
-      var span = ids.length * size;
-      var left = gx - span / 2;
-      var boxes = [];
+      var gx = x0 + order[g] * cell + cell * 0.5;
+      var left = gx - ids.length * size / 2;
       for (var k = 0; k < ids.length; k++) {
-        boxes.push({
-          i: ids[k], x: left + k * size, y: by, w: size, h: size,
-          aim: gx, art: art
-        });
-      }
-      packed.push({ left: left, right: left + span, boxes: boxes });
-    }
-    packed.sort(function (a, b) { return a.left - b.left; });
-    var rowRight = [];
-    for (var p = 0; p < packed.length; p++) {
-      var item = packed[p];
-      var row = 0;
-      for (; row < rowRight.length; row++) {
-        if (item.left >= rowRight[row] - 0.01) break;
-      }
-      if (row === rowRight.length) rowRight.push(item.right);
-      else rowRight[row] = Math.max(rowRight[row], item.right);
-      for (var b = 0; b < item.boxes.length; b++) item.boxes[b].y = by + row * (size + 4);
-    }
-    var margin = 2;
-    for (p = 0; p < packed.length; p++) {
-      var grp = packed[p];
-      var shift = 0;
-      if (grp.left < margin) shift = margin - grp.left;
-      else if (grp.right > cssW - margin) shift = (cssW - margin) - grp.right;
-      if (!shift) continue;
-      for (b = 0; b < grp.boxes.length; b++) grp.boxes[b].x += shift;
-    }
-    var boxes = new Array(count);
-    for (p = 0; p < packed.length; p++) {
-      for (b = 0; b < packed[p].boxes.length; b++) {
-        var box = packed[p].boxes[b];
-        boxes[box.i] = box;
+        boxes[ids[k]] = { i: ids[k], x: left + k * size, y: 0, w: size, h: size, aim: gx, art: art };
       }
     }
-    geom.bottles = boxes;
-    return Math.max(1, rowRight.length);
+    return boxes;
+  }
+
+  function rowFits(boxes) {
+    for (var i = 0; i < boxes.length; i++) {
+      var a = boxes[i];
+      if (a.x < 1 || a.x + a.w > cssW - 1) return false;
+      for (var j = i + 1; j < boxes.length; j++) {
+        var b = boxes[j];
+        if (a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5) return false;
+      }
+    }
+    return true;
+  }
+
+  function fitAt(cell, size, art, cols) {
+    var x0 = (cssW - cols * cell) / 2;
+    var boxes = placeRow(x0, cell, size, art);
+    var min = Infinity;
+    var max = -Infinity;
+    for (var i = 0; i < boxes.length; i++) {
+      min = Math.min(min, boxes[i].x);
+      max = Math.max(max, boxes[i].x + boxes[i].w);
+    }
+    if (max - min > cssW - 4) return null;
+    var shift = 0;
+    if (min < 2) shift = 2 - min;
+    if (max + shift > cssW - 2) shift = (cssW - 2) - max;
+    if (min + shift < 2) return null;
+    if (shift) {
+      x0 += shift;
+      boxes = placeRow(x0, cell, size, art);
+    }
+    if (!rowFits(boxes)) return null;
+    return { x0: x0, boxes: boxes, size: size };
+  }
+
+  function largestFit(cell, cols, art) {
+    var size = 64;
+    while (size >= 44) {
+      var fitted = fitAt(cell, size, art, cols);
+      if (fitted) return fitted;
+      size -= 1;
+    }
+    var x0 = (cssW - cols * cell) / 2;
+    return { x0: x0, size: 44, boxes: placeRow(x0, cell, 44, art) };
   }
 
   function load(n) {
@@ -211,6 +259,9 @@
     ['menu-panel', 'help', 'win', 'stuck', 'fail'].forEach(function (id) {
       document.getElementById(id).classList.add('hidden');
     });
+    var checking = document.getElementById('checking');
+    if (checking) checking.classList.add('hidden');
+    document.getElementById('bar').classList.remove('hidden');
   }
 
   function syncHud() {
@@ -236,12 +287,20 @@
   function judge() {
     if (F.won(level, board)) return 'win';
     if (left <= 0) return 'fail';
-    if (!level._graph) return null;
-    if (F.distance(level, board) > left) return 'stuck';
+    var known = F.distanceIfKnown(level, board);
+    if (known == null) return 'pending';
+    if (known > left) return 'stuck';
     return null;
   }
 
   function reveal(outcome) {
+    var checking = document.getElementById('checking');
+    if (outcome === 'pending') {
+      if (checking) checking.classList.remove('hidden');
+      syncHud();
+      return;
+    }
+    if (checking) checking.classList.add('hidden');
     if (outcome === 'win') winAt = now() + 750;
     else if (outcome === 'fail') showFail();
     else if (outcome === 'stuck') showStuck();
@@ -258,6 +317,7 @@
     document.getElementById('win-copy').textContent = used + ' pours. Par is ' + level.par + '.';
     var next = document.getElementById('win-next');
     next.disabled = level.n >= F.levels().length;
+    document.getElementById('bar').classList.add('hidden');
     document.getElementById('win').classList.remove('hidden');
     chord();
   }
@@ -273,10 +333,6 @@
     if (stuckShown || winShown || failShown) return;
     stuckShown = true;
     document.getElementById('stuck-copy').textContent = F.stuckText(left);
-    var undo = document.getElementById('stuck-undo');
-    var prev = stack[stack.length - 1];
-    var offer = !!(prev && F.undoHelps(level, prev.board, left - 1));
-    undo.classList.toggle('hidden', !offer);
     document.getElementById('stuck').classList.remove('hidden');
   }
 
@@ -349,20 +405,21 @@
   }
 
   function undo() {
-    var stuckOpen = stuckShown && !document.getElementById('stuck').classList.contains('hidden');
-    if (anim || settled || left < 1 || !stack.length) return;
-    if (overlayOpen() && !stuckOpen) return;
-    hideAll();
-    stuckShown = false;
-    failShown = false;
+    if (anim || settled || !stack.length || overlayOpen()) return;
     var entry = stack.pop();
     board = entry.board;
+    if (entry.stain && stains.length) stains.pop();
+    left += 1;
+    used -= 1;
     left -= 1;
     used += 1;
-    if (entry.stain && stains.length) stains.pop();
-    var outcome = F.won(level, board) ? 'win' : (left <= 0 ? 'fail' : null);
     tone(180, 0.06, 'triangle', 0.03);
-    if (!outcome && F.distance(level, board) > left) outcome = 'stuck';
+    var outcome = F.won(level, board) ? 'win' : (left <= 0 ? 'fail' : null);
+    if (!outcome) {
+      var known = F.distanceIfKnown(level, board);
+      if (known == null) outcome = 'pending';
+      else if (known > left) outcome = 'stuck';
+    }
     reveal(outcome);
     syncHud();
     paint();
@@ -780,9 +837,13 @@
       drawRibbon(phase.event, phase.u);
     }
     if (anim && phase && phase.index < 0) {
-      var bottle = geom.bottles[anim.bottle];
-      var top = glassCenter(level.glasses[level.indexOf[level.bottles[anim.bottle].r + ',' + level.bottles[anim.bottle].c]] || level.glasses[0]);
-      drawStream(bottle.x + bottle.w / 2, bottle.y + bottle.h, top.x, top.y - 10, level.bottles[anim.bottle].colour);
+      var spec = level.bottles[anim.bottle];
+      var glass = level.glasses[level.indexOf[spec.r + ',' + spec.c]] || level.glasses[0];
+      var tilt = anim.before.tilt[level.indexOf[spec.r + ',' + spec.c]];
+      var tipNow = phase.u < 0.22 ? -0.035 : 0.4;
+      var from = spoutOf(geom.bottles[anim.bottle], tipNow);
+      var rim = rimPoint(glass, tilt);
+      drawStream(from.x, from.y, rim.x, rim.y, spec.colour);
     }
     for (var b = 0; b < level.bottles.length; b++) {
       var tip = 0;
@@ -915,6 +976,13 @@
     wiggleCount += 1;
     if (index >= 0) wiggles[index] = now() + 220;
     tone(740, 0.035, 'triangle', 0.02);
+    var endAt = anim ? anim.t0 + anim.plan.total : cascadeEndedAt;
+    ftLog.push({
+      t: Date.now(),
+      level: level ? level.n : 0,
+      sinceEnd: Math.round(now() - endAt),
+      bottle: index
+    });
   }
 
   canvas.addEventListener('pointerdown', function (event) {
@@ -947,7 +1015,6 @@
   }
   document.getElementById('restart').addEventListener('click', requestRestart);
   document.getElementById('stuck-restart').addEventListener('click', requestRestart);
-  document.getElementById('stuck-undo').addEventListener('click', undo);
   document.getElementById('fail-restart').addEventListener('click', requestRestart);
   document.getElementById('win-retry').addEventListener('click', requestRestart);
   document.getElementById('win-next').addEventListener('click', function () { if (level.n < F.levels().length) load(level.n + 1); });
@@ -1007,6 +1074,7 @@
   resize();
   requestAnimationFrame(frame);
 
+  window.__ftLog = ftLog;
   window.__fizz = {
     get ready() { return !!(level && geom && document.getElementById('loading').classList.contains('hidden')); },
     get solverReady() { return !!(level && level._graph); },
@@ -1075,7 +1143,7 @@
         failed: !document.getElementById('fail').classList.contains('hidden'),
         stuck: !document.getElementById('stuck').classList.contains('hidden'),
         banner: document.getElementById('stuck-copy').textContent,
-        undoOffered: !document.getElementById('stuck-undo').classList.contains('hidden'),
+        undoOffered: false,
         stars: over <= 0 ? 3 : over === 1 ? 2 : 1,
         goal: F.won(level, board),
         pours: document.getElementById('pours').textContent,
@@ -1091,7 +1159,10 @@
           return {
             i: i, x: box.x, y: box.y, w: box.w, h: box.h, art: box.art,
             cx: rect.left + box.x + box.w / 2, cy: rect.top + box.y + box.h / 2,
-            aim: box.aim, col: level.bottles[i].c
+            aim: box.aim, col: level.bottles[i].c,
+            spout: spoutOf(box, 0).y,
+            rim: rimPoint(entryGlass(i), entryGlass(i).tilt).y,
+            gap: rimPoint(entryGlass(i), entryGlass(i).tilt).y - spoutOf(box, 0).y
           };
         })
       };

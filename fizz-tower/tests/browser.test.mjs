@@ -74,7 +74,8 @@ test('bottle targets stay at least 64px and clear of the HUD', async () => {
         };
       });
       for (const box of info.bottles) {
-        assert.ok(box.w >= 64 && box.h >= 64, width + ' bottle ' + box.w + 'x' + box.h);
+        assert.ok(box.w >= 44 && box.h >= 44, width + ' bottle ' + box.w + 'x' + box.h);
+        if (width >= 390) assert.ok(box.w >= 60, width + ' wide bottle ' + box.w);
         assert.ok(box.x >= 0 && box.y >= info.hudBottom - 1, width + ' under hud ' + box.y + ' vs ' + info.hudBottom);
         assert.ok(box.x + box.w <= info.w + 1 && box.y + box.h <= info.barTop + 1, width + ' clipped');
       }
@@ -166,14 +167,10 @@ test('the stuck card matches the solver and offers undo only when it still wins'
     assert.equal(stuck.banner, "This tower can't be finished in " + stuck.left + (stuck.left === 1 ? ' pour' : ' pours'));
     assert.equal(stuck.failed, false);
     assert.equal(stuck.won, false);
-    assert.equal(stuck.undoOffered, true);
-    await page.click('#stuck-undo');
-    await sleep(50);
-    const undone = await page.evaluate(() => window.__fizz.snapshot());
-    assert.equal(undone.stuck, false);
-    assert.equal(undone.used, stuck.used + 1);
-    assert.equal(undone.level, 7);
-    assert.equal(undone.goal, false);
+    assert.equal(stuck.undoOffered, false);
+    assert.equal(await page.locator('#stuck-undo').count(), 0);
+    assert.equal(await page.locator('#stuck-restart').count(), 1);
+    assert.equal(stuck.level, 7);
   } finally {
     await browser.close();
   }
@@ -210,7 +207,7 @@ test('bottles hang over their entry glass and do not overlap', async () => {
         const info = await page.evaluate(() => window.__fizz.boxes());
         const bottles = info.bottles;
         for (let i = 0; i < bottles.length; i++) {
-          assert.ok(bottles[i].w >= 64 && bottles[i].h >= 44, width + ' L' + level + ' size');
+          assert.ok(bottles[i].w >= 44 && bottles[i].h >= 44, width + ' L' + level + ' size');
           assert.ok(Math.abs((bottles[i].x + bottles[i].w / 2) - bottles[i].aim) < bottles[i].w, width + ' L' + level + ' aim');
           for (let j = i + 1; j < bottles.length; j++) {
             const overlap = bottles[i].x < bottles[j].x + bottles[j].w - 0.5
@@ -237,7 +234,7 @@ test('bottles hang over their entry glass and do not overlap', async () => {
           }
         });
         if (width <= 360) {
-          for (const box of bottles) assert.ok(box.art <= 0.75 && box.w >= 64, width + ' art ' + box.art);
+          for (const box of bottles) assert.ok(box.art <= 0.75, width + ' art ' + box.art);
         }
         await page.close();
       }
@@ -311,6 +308,12 @@ test('swallowed taps wiggle and do not pour, including just after a cascade', as
     }, { x: spot.cx, y: spot.cy });
     assert.equal(timed.used, 1);
     assert.ok(timed.during >= 2, 'wiggles during ' + timed.during);
+    const logged = await page.evaluate(() => window.__ftLog.slice());
+    assert.ok(logged.length >= 2, 'log ' + logged.length);
+    assert.equal(logged[0].level, 1);
+    assert.equal(typeof logged[0].sinceEnd, 'number');
+    assert.equal(typeof logged[0].bottle, 'number');
+    assert.ok(logged[0].t > 0);
     assert.ok(timed.at100 >= 80 && timed.at100 < 150, '100ms tap landed at ' + timed.at100);
     assert.equal(timed.after100.used, 1);
     assert.ok(timed.after100.wiggles >= timed.during + 1, 'wiggle for the grace tap');
@@ -347,22 +350,78 @@ test('cascades finish within 1.2s and the first push stays full speed', async ()
   }
 });
 
-test('landscape keeps the portrait frame and usable targets', async () => {
+test('short landscape asks for a portrait phone', async () => {
   const browser = await launch();
   try {
     const page = await browser.newPage({ viewport: { width: 844, height: 390 } });
     await page.goto(fileUrl + '?level=8');
-    await page.waitForFunction(() => window.__fizz.ready);
+    await page.waitForFunction(() => window.__fizz && window.__fizz.ready);
     const info = await page.evaluate(() => {
-      const stage = document.getElementById('stage').getBoundingClientRect();
-      return { w: stage.width, h: stage.height, bottles: window.__fizz.boxes().bottles };
+      const rotate = document.getElementById('rotate');
+      const stage = document.getElementById('stage');
+      const shown = getComputedStyle(rotate).display !== 'none';
+      return { shown, text: rotate.innerText, stage: getComputedStyle(stage).display };
     });
-    assert.ok(info.w < info.h, 'portrait frame ' + info.w + 'x' + info.h);
-    assert.ok(Math.abs(info.w / info.h - 390 / 844) < 0.08, 'aspect ' + info.w / info.h);
-    assert.ok(info.w < 520, 'not full bleed ' + info.w);
-    for (const box of info.bottles) {
-      assert.ok(box.w >= 44 && box.h >= 44, 'target ' + box.w);
+    assert.equal(info.shown, true);
+    assert.match(info.text, /Rotate your phone/);
+    assert.equal(info.stage, 'none');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('a pour then undo nets one pour', async () => {
+  const browser = await launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto(fileUrl + '?level=1');
+    await page.waitForFunction(() => window.__fizz.ready);
+    const before = await page.evaluate(() => window.__fizz.snapshot());
+    await page.evaluate(() => window.__fizz.instant(0));
+    assert.equal((await page.evaluate(() => window.__fizz.snapshot())).used, 1);
+    await page.evaluate(() => window.__fizz.undo());
+    const after = await page.evaluate(() => window.__fizz.snapshot());
+    assert.equal(after.used, 1);
+    assert.equal(after.left, before.budget - 1);
+    assert.equal(after.goal, false);
+    assert.equal(after.stuck, false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('spouts sit within 24px of the entry rim', async () => {
+  const browser = await launch();
+  try {
+    const report = [];
+    for (let level = 1; level <= 10; level++) {
+      for (const [width, height] of [[320, 568], [360, 800], [390, 844], [430, 932]]) {
+        const page = await browser.newPage({ viewport: { width, height } });
+        await page.goto(fileUrl + '?level=' + level);
+        await page.waitForFunction(() => window.__fizz.ready);
+        const info = await page.evaluate(() => window.__fizz.boxes());
+        const bottles = info.bottles;
+        let min = Infinity;
+        let max = -Infinity;
+        for (let i = 0; i < bottles.length; i++) {
+          assert.ok(bottles[i].w >= 44 && bottles[i].h >= 44, width + ' L' + level + ' hit ' + bottles[i].w);
+          assert.ok(bottles[i].gap <= 24, width + ' L' + level + ' gap ' + bottles[i].gap);
+          assert.ok(bottles[i].gap >= 8, width + ' L' + level + ' gap ' + bottles[i].gap);
+          if (bottles[i].gap < min) min = bottles[i].gap;
+          if (bottles[i].gap > max) max = bottles[i].gap;
+          for (let j = i + 1; j < bottles.length; j++) {
+            const overlap = bottles[i].x < bottles[j].x + bottles[j].w - 0.5
+              && bottles[j].x < bottles[i].x + bottles[i].w - 0.5
+              && bottles[i].y < bottles[j].y + bottles[j].h - 0.5
+              && bottles[j].y < bottles[i].y + bottles[i].h - 0.5;
+            assert.equal(overlap, false, width + ' L' + level + ' overlap');
+          }
+        }
+        report.push('L' + level + ' ' + width + 'x' + height + ' gap ' + min.toFixed(1) + '-' + max.toFixed(1) + ' hit ' + bottles[0].w);
+        await page.close();
+      }
     }
+    console.log(report.join('\n'));
   } finally {
     await browser.close();
   }

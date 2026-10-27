@@ -30,7 +30,8 @@
           GREEDY2: row.stats.GREEDY2,
           FILLFIRST: row.stats.FILLFIRST
         },
-        ref: row.reference_line
+        ref: row.reference_line,
+        distTable: index === 9 ? root.FIZZ_L10_DIST || null : null
       };
     });
   }
@@ -291,9 +292,21 @@
   }
 
   function distance(level, state) {
+    var known = distanceIfKnown(level, state);
+    if (known != null) return known;
     var g = graph(level);
     var key = encode(state);
     return g.dist.has(key) ? g.dist.get(key) : Infinity;
+  }
+
+  function distanceIfKnown(level, state) {
+    var key = encode(state);
+    if (level.distTable) {
+      var shipped = level.distTable[key];
+      return shipped == null ? Infinity : shipped;
+    }
+    if (!level._graph) return null;
+    return level._graph.dist.has(key) ? level._graph.dist.get(key) : Infinity;
   }
 
   function stuckText(left) {
@@ -388,6 +401,99 @@
     return rates;
   }
 
+  function lazyRatesUndo(level) {
+    var budget = level.budget;
+    var n = level.bottles.length;
+    var names = ['RAND', 'GREEDY', 'GREEDY2', 'FILLFIRST'];
+    var rates = {};
+    function actsOf(state, prev) {
+      var acts = [];
+      for (var b = 0; b < n; b++) {
+        acts.push({ state: pour(level, state, b).state, prev: state, usedDelta: 1, bottle: b });
+      }
+      if (prev) acts.push({ state: prev, prev: null, usedDelta: 0, bottle: -1 });
+      return acts;
+    }
+    names.forEach(function (name) {
+      var memo = new Map();
+      function choose(state, prev) {
+        var acts = actsOf(state, prev);
+        if (name === 'RAND') {
+          return acts.map(function (act) { return [1 / acts.length, act]; });
+        }
+        if (name === 'GREEDY2') {
+          var best = -1;
+          var values = [];
+          for (var i = 0; i < acts.length; i++) {
+            var mid = acts[i].state;
+            var value = won(level, mid) ? 1000000 : 0;
+            if (!won(level, mid)) {
+              var second = actsOf(mid, acts[i].prev);
+              var local = -1;
+              for (var s = 0; s < second.length; s++) {
+                var sc = score(level, second[s].state) + (won(level, second[s].state) ? 100000 : 0);
+                if (sc > local) local = sc;
+              }
+              value = local;
+            }
+            values.push(value);
+            if (value > best) best = value;
+          }
+          var tied = [];
+          for (i = 0; i < acts.length; i++) if (values[i] === best) tied.push(acts[i]);
+          return tied.map(function (act) { return [1 / tied.length, act]; });
+        }
+        var pool = acts;
+        if (name === 'FILLFIRST') {
+          var land = [];
+          for (var b = 0; b < n; b++) {
+            var info = pour(level, state, b);
+            if (info.kind === 'land' && info.path.length === 1) land.push(acts[b]);
+          }
+          if (land.length) {
+            pool = land.slice();
+            if (prev) {
+              var undoAct = acts[acts.length - 1];
+              var bestLand = -1;
+              for (var k = 0; k < land.length; k++) {
+                var ls = score(level, land[k].state);
+                if (ls > bestLand) bestLand = ls;
+              }
+              if (score(level, undoAct.state) >= bestLand) pool.push(undoAct);
+            }
+          }
+        }
+        var max = -1;
+        var scored = [];
+        for (var i = 0; i < pool.length; i++) {
+          var sc = score(level, pool[i].state);
+          scored.push(sc);
+          if (sc > max) max = sc;
+        }
+        var chosen = [];
+        for (i = 0; i < pool.length; i++) if (scored[i] === max) chosen.push(pool[i]);
+        return chosen.map(function (act) { return [1 / chosen.length, act]; });
+      }
+      function walk(state, used, prev) {
+        if (won(level, state)) return 1;
+        if (used >= budget) return 0;
+        var id = used + '@' + encode(state) + '@' + (prev ? encode(prev) : '-');
+        if (memo.has(id)) return memo.get(id);
+        memo.set(id, 0);
+        var options = choose(state, prev);
+        var total = 0;
+        for (var i = 0; i < options.length; i++) {
+          var act = options[i][1];
+          total += options[i][0] * walk(act.state, used + act.usedDelta, act.usedDelta ? act.prev : null);
+        }
+        memo.set(id, total);
+        return total;
+      }
+      rates[name] = Math.round(walk(start(level), 0, null) * 10000) / 100;
+    });
+    return rates;
+  }
+
   root.FizzLogic = {
     levels: levels,
     start: start,
@@ -404,8 +510,10 @@
     stepSolve: stepSolve,
     maxEvents: maxEvents,
     distance: distance,
+    distanceIfKnown: distanceIfKnown,
     stuckText: stuckText,
     undoHelps: undoHelps,
-    lazyRates: lazyRates
+    lazyRates: lazyRates,
+    lazyRatesUndo: lazyRatesUndo
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

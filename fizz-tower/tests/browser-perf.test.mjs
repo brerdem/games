@@ -62,6 +62,8 @@ test('cold loads and the first frames of L5 L8 and L10 over http', async () => {
       const visible = [];
       const windows = [];
       const cascades = [];
+      const undos = [];
+      const stuckLate = [];
       for (let run = 0; run < 10; run++) {
         const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
         const page = await context.newPage();
@@ -73,9 +75,25 @@ test('cold loads and the first frames of L5 L8 and L10 over http', async () => {
         visible.push(Date.now() - started);
         await page.evaluate(() => {
           window.__frames = [];
+          window.__long = [];
+          try {
+            const obs = new PerformanceObserver((list) => {
+              list.getEntries().forEach((entry) => window.__long.push(entry.duration));
+            });
+            obs.observe({ entryTypes: ['longtask'] });
+          } catch (err) { /* longtask is optional */ }
           function tick(now) { window.__frames.push(now); requestAnimationFrame(tick); }
           requestAnimationFrame(tick);
         });
+        let undoMs = null;
+        if (level === 10) {
+          undoMs = await page.evaluate(() => {
+            window.__fizz.instant(0);
+            const started = performance.now();
+            window.__fizz.undo();
+            return performance.now() - started;
+          });
+        }
         if (level === 8) await page.evaluate(() => window.__fizz.commit(0));
         await page.waitForFunction(() => window.__frames && window.__frames.length >= 70, null, { timeout: 8000 });
         await page.waitForFunction(() => window.__fizz.solverReady, null, { timeout: 15000 });
@@ -110,15 +128,42 @@ test('cold loads and the first frames of L5 L8 and L10 over http', async () => {
           cascades.push(cascade.ms);
           cascadeWorst = worstWindow(cascade.frames);
           worst = Math.min(worst, cascadeWorst);
-          console.log(`fizz L10 run ${run + 1} cascade ${cascade.ms.toFixed(1)} events ${events} cascadeWorst ${cascadeWorst.toFixed(1)} idleWorst ${sample.worst.toFixed(1)}`);
+          const late = await page.evaluate(async () => {
+            window.__fizz.load(10);
+            window.__fizz.commit(1);
+            await new Promise((resolve) => {
+              function watch() {
+                if (window.__fizz.animating()) requestAnimationFrame(watch);
+                else resolve();
+              }
+              requestAnimationFrame(watch);
+            });
+            const snap = window.__fizz.snapshot();
+            return { after: performance.now() - window.__fizz.cascadeEnded(), stuck: snap.stuck, banner: snap.banner };
+          });
+          stuckLate.push(late.after);
+          assert.equal(late.stuck, true, late.banner);
+          console.log(`fizz L10 run ${run + 1} cascade ${cascade.ms.toFixed(1)} events ${events} cascadeWorst ${cascadeWorst.toFixed(1)} idleWorst ${sample.worst.toFixed(1)} undo ${undoMs.toFixed(1)} stuckAfter ${late.after.toFixed(1)}`);
         }
         windows.push(worst);
+        if (undoMs != null) {
+          undos.push(undoMs);
+          assert.ok(undoMs < 50, 'undo long task ' + undoMs);
+        }
         console.log(`fizz L${level} run ${run + 1} visible ${visible[visible.length - 1]} worst30 ${worst.toFixed(1)} solver ${sample.solver.toFixed(0)} url ${pageUrl}`);
         await context.close();
       }
       const vis = report('fizz cold L' + level + ' visible ms', visible);
       const fps = report('fizz cold L' + level + ' worst 30-frame fps', windows);
       if (cascades.length) report('fizz cold L' + level + ' cascade ms', cascades);
+      if (undos.length) {
+        const undoSorted = report('fizz L' + level + ' undo during solve ms', undos);
+        assert.ok(undoSorted[undoSorted.length - 1] < 50, 'undo max ' + undoSorted[undoSorted.length - 1]);
+      }
+      if (stuckLate.length) {
+        const lateSorted = report('fizz L' + level + ' stuck after cascade ms', stuckLate);
+        assert.ok(lateSorted[lateSorted.length - 1] < 100, 'stuck late ' + lateSorted[lateSorted.length - 1]);
+      }
       assert.ok(vis[vis.length - 1] < 1000, 'L' + level + ' visible ' + vis[vis.length - 1]);
       assert.ok(fps[0] >= 50, 'L' + level + ' worst min ' + fps[0]);
       if (cascades.length) assert.ok(Math.max(...cascades) <= 1200, 'cascade ' + Math.max(...cascades));
