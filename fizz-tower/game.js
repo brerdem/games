@@ -80,7 +80,7 @@
       glassRows = Math.max(glassRows, g.r + 1);
       glassCols = Math.max(glassCols, g.c + 1);
     });
-    var art = cssW <= 360 ? 0.7 : 1;
+    var art = 1;
     var cell = Math.min(148, (cssW - 4) / glassCols);
     var guard = 0;
     while (guard++ < 16) {
@@ -157,7 +157,7 @@
       var gx = x0 + order[g] * cell + cell * 0.5;
       var left = gx - ids.length * size / 2;
       for (var k = 0; k < ids.length; k++) {
-        boxes[ids[k]] = { i: ids[k], x: left + k * size, y: 0, w: size, h: size, aim: gx, art: art };
+        boxes[ids[k]] = { i: ids[k], x: Math.floor(left + k * size), y: 0, w: size, h: size, aim: gx, art: art };
       }
     }
     return boxes;
@@ -169,7 +169,7 @@
       if (a.x < 1 || a.x + a.w > cssW - 1) return false;
       for (var j = i + 1; j < boxes.length; j++) {
         var b = boxes[j];
-        if (a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5) return false;
+        if (a.x < b.x + b.w && b.x < a.x + a.w) return false;
       }
     }
     return true;
@@ -682,8 +682,13 @@
     ctx.fillStyle = style.fill;
     ctx.fillRect(-10, -box.h * 0.22, 20, box.h * 0.34);
     pattern(style.pattern, -10, -box.h * 0.22, 20, box.h * 0.34);
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    ctx.fillRect(-4, box.h * 0.26, 8, box.h * 0.16);
+    ctx.fillStyle = '#FFF6EA';
+    ctx.strokeStyle = '#2B1B3D';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.rect(-4, box.h * 0.26, 8, box.h * 0.16);
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
     if (level.n === 2 && used === 0 && !anim && spec.colour === 'B' && now() - levelStarted > 4000) {
       ctx.fillStyle = 'rgba(139,212,58,.85)';

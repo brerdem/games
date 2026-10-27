@@ -210,8 +210,8 @@ test('bottles hang over their entry glass and do not overlap', async () => {
           assert.ok(bottles[i].w >= 44 && bottles[i].h >= 44, width + ' L' + level + ' size');
           assert.ok(Math.abs((bottles[i].x + bottles[i].w / 2) - bottles[i].aim) < bottles[i].w, width + ' L' + level + ' aim');
           for (let j = i + 1; j < bottles.length; j++) {
-            const overlap = bottles[i].x < bottles[j].x + bottles[j].w - 0.5
-              && bottles[j].x < bottles[i].x + bottles[i].w - 0.5
+            const overlap = bottles[i].x < bottles[j].x + bottles[j].w
+              && bottles[j].x < bottles[i].x + bottles[i].w
               && bottles[i].y < bottles[j].y + bottles[j].h
               && bottles[j].y < bottles[i].y + bottles[i].h;
             assert.equal(overlap, false, width + ' L' + level + ' overlap ' + i + ' ' + j);
@@ -233,8 +233,8 @@ test('bottles hang over their entry glass and do not overlap', async () => {
             assert.ok(Math.abs((c1 - group[1].aim) - group[1].w / 2) < 1.5, width + ' L' + level + ' half right');
           }
         });
-        if (width <= 360) {
-          for (const box of bottles) assert.ok(box.art <= 0.75, width + ' art ' + box.art);
+        if (width <= 320) {
+          for (const box of bottles) assert.ok(box.art >= 1, width + ' art ' + box.art);
         }
         await page.close();
       }
@@ -410,10 +410,10 @@ test('spouts sit within 24px of the entry rim', async () => {
           if (bottles[i].gap < min) min = bottles[i].gap;
           if (bottles[i].gap > max) max = bottles[i].gap;
           for (let j = i + 1; j < bottles.length; j++) {
-            const overlap = bottles[i].x < bottles[j].x + bottles[j].w - 0.5
-              && bottles[j].x < bottles[i].x + bottles[i].w - 0.5
-              && bottles[i].y < bottles[j].y + bottles[j].h - 0.5
-              && bottles[j].y < bottles[i].y + bottles[i].h - 0.5;
+            const overlap = bottles[i].x < bottles[j].x + bottles[j].w
+              && bottles[j].x < bottles[i].x + bottles[i].w
+              && bottles[i].y < bottles[j].y + bottles[j].h
+              && bottles[j].y < bottles[i].y + bottles[i].h;
             assert.equal(overlap, false, width + ' L' + level + ' overlap');
           }
         }
@@ -422,6 +422,37 @@ test('spouts sit within 24px of the entry rim', async () => {
       }
     }
     console.log(report.join('\n'));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('the L8 reference wins by touch at four portrait sizes', async () => {
+  const browser = await launch();
+  const moves = [0, 2, 1, 1, 1, 2, 1, 1, 1];
+  try {
+    for (const [width, height] of [[320, 568], [360, 800], [390, 844], [430, 932]]) {
+      const context = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      const session = await context.newCDPSession(page);
+      const errors = [];
+      page.on('pageerror', (err) => errors.push(String(err)));
+      await page.goto(fileUrl + '?level=8');
+      await page.waitForFunction(() => window.__fizz.ready && window.__fizz.solverReady);
+      for (const index of moves) {
+        const spot = await page.evaluate((i) => window.__fizz.boxes().bottles[i], index);
+        await tap(session, spot.cx, spot.cy);
+        await settle(page);
+        await page.waitForFunction(() => window.__fizz.graceLeft() === 0);
+      }
+      await page.waitForFunction(() => window.__fizz.snapshot().won, null, { timeout: 4000 });
+      const snap = await page.evaluate(() => window.__fizz.snapshot());
+      assert.equal(snap.won, true, width + ' won');
+      assert.equal(snap.used, 9, width + ' used');
+      assert.equal(snap.stars, 3, width + ' stars');
+      assert.equal(errors.length, 0, errors.join('\n'));
+      await context.close();
+    }
   } finally {
     await browser.close();
   }

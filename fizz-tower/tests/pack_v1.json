@@ -46,12 +46,12 @@
    "glasses": 3,
    "bottles": 1,
    "rockers": 0,
-   "RAND": 100.0,
-   "GREEDY": 100.0,
-   "GREEDY2": 100.0,
-   "FILLFIRST": 100.0,
+   "RAND": 100,
+   "GREEDY": 100,
+   "GREEDY2": 100,
+   "FILLFIRST": 100,
    "norock_par": 3,
-   "norock_G": 100.0,
+   "norock_G": 100,
    "good_open": 1
   },
   "reference_line": [
@@ -112,11 +112,11 @@
    "bottles": 2,
    "rockers": 0,
    "RAND": 37.5,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": 3,
-   "norock_G": 0.0,
+   "norock_G": 0,
    "good_open": 2
   },
   "reference_line": [
@@ -176,10 +176,10 @@
    "glasses": 3,
    "bottles": 2,
    "rockers": 2,
-   "RAND": 25.0,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "RAND": 25,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },
@@ -258,11 +258,11 @@
    "bottles": 3,
    "rockers": 3,
    "RAND": 6.01,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": 5,
-   "norock_G": 0.0,
+   "norock_G": 0,
    "good_open": 2
   },
   "reference_line": [
@@ -357,9 +357,9 @@
    "bottles": 2,
    "rockers": 4,
    "RAND": 2.34,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },
@@ -451,9 +451,9 @@
    "bottles": 3,
    "rockers": 2,
    "RAND": 4.12,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },
@@ -545,11 +545,11 @@
    "bottles": 3,
    "rockers": 3,
    "RAND": 1.5,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": 7,
-   "norock_G": 0.0,
+   "norock_G": 0,
    "good_open": 2
   },
   "reference_line": [
@@ -585,7 +585,7 @@
     "rocker": true,
     "target": [
      "B",
-     "B"
+     "A"
     ]
    },
    {
@@ -646,14 +646,14 @@
   ],
   "stats": {
    "par": 9,
-   "states": 1637,
+   "states": 1635,
    "glasses": 6,
    "bottles": 3,
    "rockers": 5,
-   "RAND": 0.7,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.64,
-   "FILLFIRST": 0.0,
+   "RAND": 0.59,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },
@@ -666,7 +666,7 @@
    "B@1:land2",
    "A@1:spill2",
    "A@1:land3",
-   "B@1:land3"
+   "A@1:land3"
   ]
  },
  {
@@ -758,9 +758,9 @@
    "bottles": 3,
    "rockers": 3,
    "RAND": 0.65,
-   "GREEDY": 0.0,
+   "GREEDY": 0,
    "GREEDY2": 1.47,
-   "FILLFIRST": 0.0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },
@@ -870,9 +870,9 @@
    "bottles": 4,
    "rockers": 4,
    "RAND": 0.19,
-   "GREEDY": 0.0,
-   "GREEDY2": 0.0,
-   "FILLFIRST": 0.0,
+   "GREEDY": 0,
+   "GREEDY2": 0,
+   "FILLFIRST": 0,
    "norock_par": null,
    "good_open": 2
   },

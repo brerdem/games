@@ -17,7 +17,7 @@
 
 - `core.py` is retired and is not in this repo. `tests/core2.py` is the only rules source.
 - Cascades have no slow final step. The first push is 280 ms. Later steps share the remaining time. The schedule cap is 1140 ms so a late frame still finishes by 1.2 s.
-- Shared-column bottles sit side by side in index order, each center half a bottle width from the glass, spouts angled into that glass. Hit boxes do not overlap. They are 64 px where the columns allow it, and never under 44 px. At 360 px and narrower the art scale is 0.7.
+- Shared-column bottles sit side by side in index order, each center half a bottle width from the glass, spouts angled into that glass. Hit boxes are snapped to whole pixels and do not overlap (the R2 note that said this was wrong: at 320 px, L8 and L9 overlapped by 0.5 px). They are 64 px where the columns allow it, and never under 44 px. Bottle art is drawn at full size inside the hit box, including at 320 px, and the spout tip has a dark outline so it reads on the cream panel.
 - Taps in the cascade and for 150 ms after it are not queued.
 
 ## Implementation
@@ -37,10 +37,10 @@ Hit-box width:
 | Levels | 320×568 | 360×800 | 390×844 | 430×932 |
 | --- | --- | --- | --- | --- |
 | L1–L7 | 64 | 64 | 64 | 64 |
-| L8, L9 | 53 | 59 | 64 | 64 |
-| L10 | 52 | 59 | 64 | 64 |
+| L8, L9 | 52 | 59 | 64 | 64 |
+| L10 | 53 | 59 | 64 | 64 |
 
-L8–L10 share a column with a neighbour, so 64 px boxes would overlap at the narrower widths. Those hits stay at or above 44 px. No hit boxes overlap.
+L8–L10 share a column with a neighbour, so 64 px boxes would overlap at the narrower widths. Those hits stay at or above 44 px. After the R3 snap, neighbouring boxes meet on integer edges (at 320, L8 and L9 are 15–67, 68–120 and 120–172) and do not overlap.
 
 ## Odds before and after the undo rule
 
@@ -90,6 +90,39 @@ The longest L10 cascade in the same runs was 1146.2 / 1150.4 / 1154.3 ms.
 - Pour-only lazy rates still match the pack. The undo-aware rates above were run in JavaScript and in Python against `core2.py`.
 - Not a device-lab result.
 
+## R3 polish
+
+Held for Game Finder sign-off on the L8 candidate. Not pushed with this commit until that ruling is relayed.
+
+| ID | Change | Test | Status |
+| --- | --- | --- | --- |
+| FT-019 | Floor bottle x and reject any hit-box overlap, including a 0.5 px sliver | No overlap at 320/360/390/430 for L1–L10 | PASS |
+| FT-020 | L8 top glass (0,1) target BB → BA. Same 6 glasses, 3 bottles, 5 rockers, par 9, budget 11 | Reference line by touch at 320/360/390/430. Pour-only and undo-aware odds | PASS, candidate wired, push held |
+| FT-021 | Art scale 1 at 320 (was 0.7). Spout tip is warm white with a #2B1B3D outline | Gap still 12 px. Hits ≥ 44 | PASS |
+| FT-013 | This section, and the overlap sentence above | | PASS |
+| FT-015 | Save and progress | | OUT OF SCOPE |
+
+L8 candidates, all with the R2 net-1 undo rule. Odds are undo-aware. Winnable % is the share of states reached within the budget that can still finish in the pours left. Reference rows are the unchanged levels.
+
+| Board | What changed | Par | Budget | Optimal lines | Good openings | Winnable % | RAND | GREEDY | GREEDY2 | FILLFIRST |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| L7 | unchanged | 8 | 10 | | 2 | 10.62 | 0.38 | 0 | 0 | 0 |
+| L8 now | shipped below | 9 | 11 | 18 | 2 | 3.24 | 0.11 | 0 | 0 | 0 |
+| L8 tilt | Top glass (0,1) starts leaning R instead of L | 9 | 11 | 18 | 2 | 4.03 | 0.24 | 0 | 1.37 | 0 |
+| L8 shift | Bottom rocker moves from column 1 to column 2 | 9 | 11 | 18 | 2 | 4.41 | 0.13 | 0 | 1.26 | 0 |
+| L9 | unchanged | 9 | 11 | | 2 | 2.51 | 0.12 | 0 | 1.50 | 0 |
+| L10 | unchanged | 10 | 12 | | 2 | 1.92 | 0.05 | 0 | 0 | 0 |
+
+The tilt also lifts pour-only RAND to 1.33, above the brief's 1% cap for L8–L10. The column shift lifts pour-only GREEDY2 to 1.70, above the 1.5% cap. The layer change keeps pour-only RAND at 0.59 and pour-only GREEDY2 at 0, so that is the one wired in. Budget stays par + 2. L10 is still hardest on par (10), states (8,193) and RAND.
+
+Recommended solve trace, 9 pours: `A@0:land1`, `B@1:land1`, `A@1:land1`, `A@1:land2`, `A@1:land2`, `B@1:land2`, `A@1:spill2`, `A@1:land3`, `A@1:land3`. Pouring A@1 first is stuck ("can't be finished in 10 pours"). The other two openings, A@0 and B@1, are on optimal lines (2 and 16 of the 18).
+
+Tilt trace: `A@0:land1`, `B@1:land1`, `A@1:land1`, `A@1:land2`, `B@1:land2`, `A@1:spill2`, `A@1:land2`, `A@1:land3`, `B@1:land3`.
+
+Shift trace: `A@0:land1`, `B@1:land1`, `A@1:land1`, `A@1:land2`, `A@1:land2`, `B@1:land2`, `A@1:land3`, `A@1:spill2`, `B@1:land3`.
+
+R3 remeasure, same local method as R2 (390×844, DPR 2 capped at 1.5, 4× CPU, `http://127.0.0.1:34857/index.html`). Undo during the L10 solve is 11.4 / 11.9 / 15.9 ms. The stuck card is 1.3 / 1.5 / 6.0 ms after the losing cascade. Visible L10 is 215 / 232.5 / 292 ms. These are local, not live https.
+
 ## Delivery
 
 - URL: https://brerdem.github.io/games/fizz-tower/
@@ -103,3 +136,7 @@ The longest L10 cascade in the same runs was 1146.2 / 1150.4 / 1154.3 ms.
 - `/opt/cursor/artifacts/fizz-tower-844-landscape.png`
 - `/opt/cursor/artifacts/fizz-tower-desktop-1440.png`
 - `/opt/cursor/artifacts/fizz-tower-desktop-1920.png`
+- `/opt/cursor/artifacts/fizz-tower-320-l8.png`
+- `/opt/cursor/artifacts/fizz-tower-320-l9.png`
+- `/opt/cursor/artifacts/fizz-tower-320-l10.png`
+- `/opt/cursor/artifacts/fizz-tower-390-l8.png`
